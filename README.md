@@ -16,6 +16,9 @@ Want this addon to have *official support and updates*?
  **Subscribe to Ian’s Patreon:**  
 [https://www.patreon.com/IanHubert](https://www.patreon.com/IanHubert)
 
+ **Ian's Official Github for Compify:** 
+https://github.com/EatTheFuture/compify
+
 > *(I am doing this purely as a user and make no income from these changes/updates.)*
 
 <img width="409" height="513" src="https://github.com/user-attachments/assets/eec98d54-c287-4f73-8473-025e0852036e" alt="Support Ian Screenshot" />
