@@ -20,50 +20,94 @@ def ensure_footage_group():
     for node in group.nodes:
         group.nodes.remove(node)
 
-    # Create the group inputs and outputs.
-    socket = group.interface.new_socket(name="Footage", socket_type='NodeSocketColor', in_out='INPUT')
-    socket.default_value = (1.0, 0.0, 1.0, 1.0)
-    socket.hide_value = True
+    # Create the group inputs and outputs based on Blender version
+    if hasattr(group, 'interface') and hasattr(group.interface, 'new_socket'):
+        # Blender 4.0-4.2 method
+        # Create the group inputs and outputs.
+        socket = group.interface.new_socket(name="Footage", socket_type='NodeSocketColor', in_out='INPUT')
+        socket.default_value = (1.0, 0.0, 1.0, 1.0)
+        socket.hide_value = True
 
-    socket = group.interface.new_socket(name="Footage Alpha", socket_type='NodeSocketFloat', in_out='INPUT')
-    socket.default_value = 1.0
-    socket.min_value = 0.0
-    socket.max_value = 1.0
+        socket = group.interface.new_socket(name="Footage Alpha", socket_type='NodeSocketFloat', in_out='INPUT')
+        socket.default_value = 1.0
+        socket.min_value = 0.0
+        socket.max_value = 1.0
 
-    socket = group.interface.new_socket(name="Footage Emit", socket_type='NodeSocketFloat', in_out='INPUT')
-    socket.default_value = 0.0
-    socket.min_value = 0.0
-    socket.max_value = 1.0
+        socket = group.interface.new_socket(name="Footage Emit", socket_type='NodeSocketFloat', in_out='INPUT')
+        socket.default_value = 0.0
+        socket.min_value = 0.0
+        socket.max_value = 1.0
 
-    socket = group.interface.new_socket(name="Background", socket_type='NodeSocketColor', in_out='INPUT')
-    socket.default_value = (1.0, 0.0, 1.0, 1.0)
-    socket.hide_value = True
+        socket = group.interface.new_socket(name="Background", socket_type='NodeSocketColor', in_out='INPUT')
+        socket.default_value = (1.0, 0.0, 1.0, 1.0)
+        socket.hide_value = True
 
-    socket = group.interface.new_socket(name="Background Alpha", socket_type='NodeSocketFloat', in_out='INPUT')
-    socket.default_value = 0.0
-    socket.min_value = 0.0
-    socket.max_value = 1.0
+        socket = group.interface.new_socket(name="Background Alpha", socket_type='NodeSocketFloat', in_out='INPUT')
+        socket.default_value = 0.0
+        socket.min_value = 0.0
+        socket.max_value = 1.0
 
-    socket = group.interface.new_socket(name="Background Emit", socket_type='NodeSocketFloat', in_out='INPUT')
-    socket.default_value = 0.0
-    socket.min_value = 0.0
-    socket.max_value = 1.0
+        socket = group.interface.new_socket(name="Background Emit", socket_type='NodeSocketFloat', in_out='INPUT')
+        socket.default_value = 0.0
+        socket.min_value = 0.0
+        socket.max_value = 1.0
 
-    socket = group.interface.new_socket(name="Baked Lighting", socket_type='NodeSocketColor', in_out='INPUT')
-    socket.default_value = (1.0, 1.0, 1.0, 1.0)
-    socket.hide_value = True
+        socket = group.interface.new_socket(name="Baked Lighting", socket_type='NodeSocketColor', in_out='INPUT')
+        socket.default_value = (1.0, 1.0, 1.0, 1.0)
+        socket.hide_value = True
 
-    socket = group.interface.new_socket(name="Do Bake", socket_type='NodeSocketFloat', in_out='INPUT')
-    socket.default_value = 0.0
-    socket.min_value = 0.0
-    socket.max_value = 1.0
+        socket = group.interface.new_socket(name="Do Bake", socket_type='NodeSocketFloat', in_out='INPUT')
+        socket.default_value = 0.0
+        socket.min_value = 0.0
+        socket.max_value = 1.0
 
-    socket = group.interface.new_socket(name="Debug", socket_type='NodeSocketFloat', in_out='INPUT')
-    socket.default_value = 0.0
-    socket.min_value = 0.0
-    socket.max_value = 1.0
+        socket = group.interface.new_socket(name="Debug", socket_type='NodeSocketFloat', in_out='INPUT')
+        socket.default_value = 0.0
+        socket.min_value = 0.0
+        socket.max_value = 1.0
 
-    group.interface.new_socket(name="Shader", socket_type='NodeSocketShader', in_out='OUTPUT')
+        group.interface.new_socket(name="Shader", socket_type='NodeSocketShader', in_out='OUTPUT')
+    else:
+        # Blender 4.3+ method
+        # Create inputs
+        group.inputs.new('NodeSocketColor', "Footage").default_value = (1.0, 0.0, 1.0, 1.0)
+
+        footage_alpha = group.inputs.new('NodeSocketFloat', "Footage Alpha")
+        footage_alpha.default_value = 1.0
+        footage_alpha.min_value = 0.0
+        footage_alpha.max_value = 1.0
+
+        footage_emit = group.inputs.new('NodeSocketFloat', "Footage Emit")
+        footage_emit.default_value = 0.0
+        footage_emit.min_value = 0.0
+        footage_emit.max_value = 1.0
+
+        group.inputs.new('NodeSocketColor', "Background").default_value = (1.0, 0.0, 1.0, 1.0)
+
+        bg_alpha = group.inputs.new('NodeSocketFloat', "Background Alpha")
+        bg_alpha.default_value = 0.0
+        bg_alpha.min_value = 0.0
+        bg_alpha.max_value = 1.0
+
+        bg_emit = group.inputs.new('NodeSocketFloat', "Background Emit")
+        bg_emit.default_value = 0.0
+        bg_emit.min_value = 0.0
+        bg_emit.max_value = 1.0
+
+        group.inputs.new('NodeSocketColor', "Baked Lighting").default_value = (1.0, 1.0, 1.0, 1.0)
+
+        do_bake = group.inputs.new('NodeSocketFloat', "Do Bake")
+        do_bake.default_value = 0.0
+        do_bake.min_value = 0.0
+        do_bake.max_value = 1.0
+
+        debug = group.inputs.new('NodeSocketFloat', "Debug")
+        debug.default_value = 0.0
+        debug.min_value = 0.0
+        debug.max_value = 1.0
+
+        # For output
+        group.outputs.new('NodeSocketShader', "Shader")
 
     #-------------------
     # Footage nodes.
@@ -444,7 +488,7 @@ def ensure_footage_group():
 # It will create it if it doesn't exist, and returns the group.
 def ensure_feathered_square_group():
     NAME = "Feathered Square"
-    
+
     # If it already exists, just return it.
     if NAME in bpy.data.node_groups:
         return bpy.data.node_groups[NAME]
@@ -453,63 +497,83 @@ def ensure_feathered_square_group():
     group = bpy.data.node_groups.new(NAME, type='ShaderNodeTree')
     for node in group.nodes:
         group.nodes.remove(node)
-    
-    # Create the group inputs and outputs.
-    group.interface.new_socket(name="Vector", socket_type='NodeSocketVector', in_out='INPUT')
-    
-    socket = group.interface.new_socket(name="Feather", socket_type='NodeSocketFloat', in_out='INPUT')
-    socket.default_value = 0.0
-    socket.min_value = 0.0
-    socket.max_value = 1.0
-    
-    socket = group.interface.new_socket(name="Dilate", socket_type='NodeSocketFloat', in_out='INPUT')
-    socket.default_value = 0.0
-    socket.min_value = 0.0
-    socket.max_value = 0.1
-    
-    group.interface.new_socket(name="Value", socket_type='NodeSocketFloat', in_out='OUTPUT')
+
+    # Create interface based on Blender version
+    if hasattr(group, 'interface') and hasattr(group.interface, 'new_socket'):
+        # Blender 4.0-4.2 method
+        # Create the group inputs and outputs.
+        group.interface.new_socket(name="Vector", socket_type='NodeSocketVector', in_out='INPUT')
+
+        socket = group.interface.new_socket(name="Feather", socket_type='NodeSocketFloat', in_out='INPUT')
+        socket.default_value = 0.0
+        socket.min_value = 0.0
+        socket.max_value = 1.0
+
+        socket = group.interface.new_socket(name="Dilate", socket_type='NodeSocketFloat', in_out='INPUT')
+        socket.default_value = 0.0
+        socket.min_value = 0.0
+        socket.max_value = 0.1
+
+        group.interface.new_socket(name="Value", socket_type='NodeSocketFloat', in_out='OUTPUT')
+    else:
+        # Blender 4.3+ method
+        # Create inputs
+        group.inputs.new('NodeSocketVector', "Vector")
+
+        feather = group.inputs.new('NodeSocketFloat', "Feather")
+        feather.default_value = 0.0
+        feather.min_value = 0.0
+        feather.max_value = 1.0
+
+        dilate = group.inputs.new('NodeSocketFloat', "Dilate")
+        dilate.default_value = 0.0
+        dilate.min_value = 0.0
+        dilate.max_value = 0.1
+
+        # Create output
+        group.outputs.new('NodeSocketFloat', "Value")
 
     #-------------------
     # Create the nodes.
     input = group.nodes.new(type='NodeGroupInput')
     output = group.nodes.new(type='NodeGroupOutput')
-    
+
     xyz = group.nodes.new(type='ShaderNodeSeparateXYZ')
     feather_clamp = group.nodes.new(type='ShaderNodeMath')
-    
+
     madd_x = group.nodes.new(type='ShaderNodeMath')
     madd_y = group.nodes.new(type='ShaderNodeMath')
-    
+
     abs_x = group.nodes.new(type='ShaderNodeMath')
     abs_y = group.nodes.new(type='ShaderNodeMath')
-    
+
     xy_max = group.nodes.new(type='ShaderNodeMath')
     xy_invert = group.nodes.new(type='ShaderNodeMath')
     xy_add = group.nodes.new(type='ShaderNodeMath')
     xy_divide = group.nodes.new(type='ShaderNodeMath')
-    
+
     smoothstep1 = group.nodes.new(type='ShaderNodeMath')
     smoothstep2 = group.nodes.new(type='ShaderNodeMath')
     smoothstep3 = group.nodes.new(type='ShaderNodeMath')
     smoothstep4 = group.nodes.new(type='ShaderNodeMath')
     smoothstep5 = group.nodes.new(type='ShaderNodeMath')
-    
+
     #------------------
     # Label the nodes.
     xyz.label = "XYZ"
     feather_clamp.label = "Feather Clamp"
-    
+
     madd_x.label = "Multiply-Add X"
     madd_y.label = "Multiply-Add Y"
-    
+
     abs_x.label = "Abs X"
     abs_y.label = "Abs Y"
-    
+
     xy_max.label = "XY Max"
     xy_invert.label = "XY Invert"
     xy_add.label = "XY Add"
     xy_divide.label = "XY Divide"
-    
+
     smoothstep1.label = "Smoothstep 1"
     smoothstep2.label = "Smoothstep 2"
     smoothstep3.label = "Smoothstep 3"
@@ -520,46 +584,46 @@ def ensure_feathered_square_group():
     # Position the nodes.
     hs = 250.0
     x = 0.0
-    
+
     input.location = (x, 0.0)
-    
+
     x += hs
     xyz.location = (x, 0.0)
     feather_clamp.location = (x, -200.0)
-    
+
     x += hs
     madd_x.location = (x, 0.0)
     madd_y.location = (x, -200.0)
-    
+
     x += hs
     abs_x.location = (x, 0.0)
     abs_y.location = (x, -200.0)
-    
+
     x += hs
     xy_max.location = (x, 0.0)
-    
+
     x += hs
     xy_invert.location = (x, 0.0)
-    
+
     x += hs
     xy_add.location = (x, 0.0)
-    
+
     x += hs
     xy_divide.location = (x, 0.0)
-    
+
     x += hs
     smoothstep1.location = (x, 0.0)
-    
+
     x += hs
     smoothstep2.location = (x, -200.0)
-    
+
     x += hs
     smoothstep3.location = (x, 0.0)
     smoothstep4.location = (x, -200.0)
-    
+
     x += hs
     smoothstep5.location = (x, 0.0)
-    
+
     x += hs
     output.location = (x, 0.0)
 
@@ -577,12 +641,11 @@ def ensure_feathered_square_group():
     madd_y.use_clamp = False
     madd_y.inputs[1].default_value = 2.0
     madd_y.inputs[2].default_value = -1.0
-    
-    abs_x.operation = 'ABSOLUTE'
+
     abs_x.use_clamp = False
     abs_y.operation = 'ABSOLUTE'
     abs_y.use_clamp = False
-    
+
     xy_max.operation = 'MAXIMUM'
     xy_max.use_clamp = False
     xy_invert.operation = 'MULTIPLY_ADD'
@@ -593,7 +656,7 @@ def ensure_feathered_square_group():
     xy_add.use_clamp = False
     xy_divide.operation = 'DIVIDE'
     xy_divide.use_clamp = True
-    
+
     smoothstep1.operation = 'MULTIPLY'
     smoothstep1.use_clamp = False
     smoothstep2.operation = 'MULTIPLY'
@@ -612,34 +675,34 @@ def ensure_feathered_square_group():
     group.links.new(input.outputs['Vector'], xyz.inputs[0])
     group.links.new(input.outputs['Feather'], feather_clamp.inputs[0])
     group.links.new(input.outputs['Dilate'], xy_add.inputs[1])
-    
+
     group.links.new(xyz.outputs['X'], madd_x.inputs[0])
     group.links.new(xyz.outputs['Y'], madd_y.inputs[0])
     group.links.new(feather_clamp.outputs[0], xy_divide.inputs[1])
-    
+
     group.links.new(madd_x.outputs[0], abs_x.inputs[0])
     group.links.new(madd_y.outputs[0], abs_y.inputs[0])
-    
+
     group.links.new(abs_x.outputs[0], xy_max.inputs[0])
     group.links.new(abs_y.outputs[0], xy_max.inputs[1])
-    
+
     group.links.new(xy_max.outputs[0], xy_invert.inputs['Value'])
-    
+
     group.links.new(xy_invert.outputs[0], xy_add.inputs[0])
-    
+
     group.links.new(xy_add.outputs[0], xy_divide.inputs[0])
-    
+
     group.links.new(xy_divide.outputs[0], smoothstep1.inputs[0])
     group.links.new(xy_divide.outputs[0], smoothstep1.inputs[1])
     group.links.new(xy_divide.outputs[0], smoothstep2.inputs[1])
     group.links.new(smoothstep1.outputs[0], smoothstep2.inputs[0])
-    
+
     group.links.new(smoothstep1.outputs[0], smoothstep3.inputs[0])
     group.links.new(smoothstep2.outputs[0], smoothstep4.inputs[0])
-    
+
     group.links.new(smoothstep3.outputs[0], smoothstep5.inputs[0])
     group.links.new(smoothstep4.outputs[0], smoothstep5.inputs[1])
-    
+
     group.links.new(smoothstep5.outputs[0], output.inputs['Value'])
 
     return group
@@ -663,20 +726,35 @@ def ensure_camera_project_group(camera, default_aspect=1.0):
     for node in group.nodes:
         group.nodes.remove(node)
 
-    # Create the group inputs.
-    if not "Aspect Ratio" in group.interface.items_tree:
-        socket = group.interface.new_socket(name="Aspect Ratio", socket_type='NodeSocketFloat', in_out='INPUT')
-        socket.default_value = default_aspect
-    if not "Rotation" in group.interface.items_tree:
-        group.interface.new_socket(name="Rotation", socket_type='NodeSocketFloat', in_out='INPUT')
-    if not "Loc X" in group.interface.items_tree:
-        group.interface.new_socket(name="Loc X", socket_type='NodeSocketFloat', in_out='INPUT')
-    if not "Loc Y" in group.interface.items_tree:
-        group.interface.new_socket(name="Loc Y", socket_type='NodeSocketFloat', in_out='INPUT')
+    # Create the group inputs and outputs based on Blender version
+    if hasattr(group, 'interface') and hasattr(group.interface, 'new_socket'):
+        # Blender 4.0-4.2 method
+        # Create the group inputs.
+        if not "Aspect Ratio" in group.interface.items_tree:
+            socket = group.interface.new_socket(name="Aspect Ratio", socket_type='NodeSocketFloat', in_out='INPUT')
+            socket.default_value = default_aspect
+        if not "Rotation" in group.interface.items_tree:
+            group.interface.new_socket(name="Rotation", socket_type='NodeSocketFloat', in_out='INPUT')
+        if not "Loc X" in group.interface.items_tree:
+            group.interface.new_socket(name="Loc X", socket_type='NodeSocketFloat', in_out='INPUT')
+        if not "Loc Y" in group.interface.items_tree:
+            group.interface.new_socket(name="Loc Y", socket_type='NodeSocketFloat', in_out='INPUT')
 
-    # Create the group outputs.
-    if not "Vector" in group.interface.items_tree:
-        group.interface.new_socket(name="Vector", socket_type='NodeSocketVector', in_out='OUTPUT')
+        # Create the group outputs.
+        if not "Vector" in group.interface.items_tree:
+            group.interface.new_socket(name="Vector", socket_type='NodeSocketVector', in_out='OUTPUT')
+    else:
+        # Blender 4.3+ method
+        # Create inputs
+        aspect_ratio = group.inputs.new('NodeSocketFloat', "Aspect Ratio")
+        aspect_ratio.default_value = default_aspect
+
+        group.inputs.new('NodeSocketFloat', "Rotation")
+        group.inputs.new('NodeSocketFloat', "Loc X")
+        group.inputs.new('NodeSocketFloat', "Loc Y")
+
+        # Create output
+        group.outputs.new('NodeSocketVector', "Vector")
 
     #-------------------
     # Create the nodes.
@@ -712,7 +790,7 @@ def ensure_camera_project_group(camera, default_aspect=1.0):
     user_transforms = group.nodes.new(type='ShaderNodeVectorMath')
 
     recenter = group.nodes.new(type='ShaderNodeVectorMath')
-    
+
     #--------------------
     # Label the nodes.
     camera_transform.label = "Camera Transform"
@@ -806,38 +884,41 @@ def ensure_camera_project_group(camera, default_aspect=1.0):
 
     #---------------------
     # Set up the drivers.
+    try:
+        drv_lens = lens.outputs['Value'].driver_add("default_value").driver
+        drv_lens.type = 'SUM'
+        var = drv_lens.variables.new()
+        var.type = 'SINGLE_PROP'
+        var.targets[0].id_type = 'CAMERA'
+        var.targets[0].id = camera.data
+        var.targets[0].data_path = 'lens'
 
-    drv_lens = lens.outputs['Value'].driver_add("default_value").driver
-    drv_lens.type = 'SUM'
-    var = drv_lens.variables.new()
-    var.type = 'SINGLE_PROP'
-    var.targets[0].id_type = 'CAMERA'
-    var.targets[0].id = camera.data
-    var.targets[0].data_path = 'lens'
+        drv_width = sensor_width.outputs['Value'].driver_add("default_value").driver
+        drv_width.type = 'SUM'
+        var = drv_width.variables.new()
+        var.type = 'SINGLE_PROP'
+        var.targets[0].id_type = 'CAMERA'
+        var.targets[0].id = camera.data
+        var.targets[0].data_path = 'sensor_width'
 
-    drv_width = sensor_width.outputs['Value'].driver_add("default_value").driver
-    drv_width.type = 'SUM'
-    var = drv_width.variables.new()
-    var.type = 'SINGLE_PROP'
-    var.targets[0].id_type = 'CAMERA'
-    var.targets[0].id = camera.data
-    var.targets[0].data_path = 'sensor_width'
+        drv_shift_x = lens_shift_x.outputs['Value'].driver_add("default_value").driver
+        drv_shift_x.type = 'SUM'
+        var = drv_shift_x.variables.new()
+        var.type = 'SINGLE_PROP'
+        var.targets[0].id_type = 'CAMERA'
+        var.targets[0].id = camera.data
+        var.targets[0].data_path = 'shift_x'
 
-    drv_shift_x = lens_shift_x.outputs['Value'].driver_add("default_value").driver
-    drv_shift_x.type = 'SUM'
-    var = drv_shift_x.variables.new()
-    var.type = 'SINGLE_PROP'
-    var.targets[0].id_type = 'CAMERA'
-    var.targets[0].id = camera.data
-    var.targets[0].data_path = 'shift_x'
-
-    drv_shift_y = lens_shift_y.outputs['Value'].driver_add("default_value").driver
-    drv_shift_y.type = 'SUM'
-    var = drv_shift_y.variables.new()
-    var.type = 'SINGLE_PROP'
-    var.targets[0].id_type = 'CAMERA'
-    var.targets[0].id = camera.data
-    var.targets[0].data_path = 'shift_y'
+        drv_shift_y = lens_shift_y.outputs['Value'].driver_add("default_value").driver
+        drv_shift_y.type = 'SUM'
+        var = drv_shift_y.variables.new()
+        var.type = 'SINGLE_PROP'
+        var.targets[0].id_type = 'CAMERA'
+        var.targets[0].id = camera.data
+        var.targets[0].data_path = 'shift_y'
+    except Exception as e:
+        # Handle driver setup errors gracefully
+        print(f"Warning: Driver setup error: {str(e)}")
 
     #----------------------
     # Configure the nodes.
@@ -862,7 +943,15 @@ def ensure_camera_project_group(camera, default_aspect=1.0):
     lens_shift_2.operation = 'SUBTRACT'
 
     user_translate.operation = 'SUBTRACT'
-    user_rotate.rotation_type = 'Z_AXIS'
+
+    # In Blender 4.3, VectorRotate node may have changed
+    try:
+        user_rotate.rotation_type = 'Z_AXIS'
+    except:
+        # Alternative for newer versions
+        if hasattr(user_rotate, 'rotate_type'):
+            user_rotate.rotate_type = 'Z_AXIS'
+
     user_rotate.invert = False
     user_rotate.inputs['Center'].default_value = (0.0, 0.0, 0.0)
     aspect_ratio_1.inputs['X'].default_value = 1.0

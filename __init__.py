@@ -15,13 +15,22 @@
 #  Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 #
 #======================= END GPL LICENSE BLOCK ========================
-
+#
+#
+# COMPIFY WITH SELECTIVE REFLECTION SYSTEM
+# Updated to work with Blender 4.3+ and added selective object reflections
+# Improved UI with collapsible sections and material reset functionality
+# Network rendering support removed for simplicity
+# Fixed holdout persistence issues
+#
+#
+#
 bl_info = {
     "name": "Compify",
-    "version": (0, 1, 0),
+    "version": (0, 1, 5),
     "author": "Nathan Vegdahl, Ian Hubert",
     "blender": (4, 0, 0),
-    "description": "Do compositing in 3D space.",
+    "description": "Do compositing in 3D space with selective reflections.",
     "location": "Scene properties",
     # "doc_url": "",
     "category": "Compositing",
@@ -44,95 +53,469 @@ from .node_groups import \
     ensure_feathered_square_group
 from .uv_utils import leftmost_u
 from .camera_align import camera_align_register, camera_align_unregister
-from .bake import Baker
-
-#========================================================
+from .preferences import register_preferences, unregister_preferences
 
 
-class CompifyPanel(bpy.types.Panel):
-    """Composite in 3D space."""
-    bl_label = "Compify"
-    bl_idname = "DATA_PT_compify"
-    bl_space_type = 'PROPERTIES'
-    bl_region_type = 'WINDOW'
-    bl_context = "scene"
+class BakerWithReflections:
+    """Modified Baker that handles reflector materials and preserves holdouts"""
+    def __init__(self):
+        self.is_baking = False
+        self.is_done = False
+        self.proxy_objects = []
+        self.reflector_objects = []
+        self.holdout_objects = []  # Track holdout objects
+        self.hide_render_list = {}
+        self.main_nodes = {}  # Store multiple main nodes for different materials
+        self.reflector_materials = {}  # Track reflector materials
+        self.holdout_materials = {}  # Track holdout materials to preserve them
 
-    @classmethod
-    def poll(cls, context):
-        return True
+    def post(self, scene, context=None):
+        self.is_baking = False
+        self.is_done = True
 
-    def draw(self, context):
-        wm = context.window_manager
-        layout = self.layout
+    def cancelled(self, scene, context=None):
+        self.is_baking = False
+        self.is_done = True
 
-        #--------
-        col = layout.column()
-        col.label(text="    Footage:")
-        box = col.box()
-        box.template_ID(context.scene.compify_config, "footage", open="image.open")
-        box.use_property_split = True
-        if context.scene.compify_config.footage != None:
-            box.prop(context.scene.compify_config.footage, "source")
-            box.prop(context.scene.compify_config.footage.colorspace_settings, "name", text="  Color Space")
-        box.prop(context.scene.compify_config, "camera", text="  Camera")
+    def execute(self, context):
+        # Misc setup and checks.
+        if context.scene.compify_config.geo_collection == None:
+            return {'CANCELLED'}
 
-        layout.separator(factor=0.5)
+        self.proxy_objects = list(context.scene.compify_config.geo_collection.objects)
 
-        #--------
-        col = layout.column()
-        col.label(text="    Collections:")
-        box = col.box()
-        box.use_property_split = True
+        # Get reflector objects separately
+        if context.scene.compify_config.reflectors_collection != None:
+            self.reflector_objects = [obj for obj in context.scene.compify_config.reflectors_collection.objects
+                                     if obj.type == 'MESH']
 
-        row1 = box.row()
-        row1.prop(context.scene.compify_config, "geo_collection", text="  Footage Geo")
-        row1.operator("scene.compify_add_footage_geo_collection", text="", icon='ADD')
+        # Get holdout objects separately - DON'T BAKE THEM
+        if context.scene.compify_config.holdout_collection != None:
+            self.holdout_objects = [obj for obj in context.scene.compify_config.holdout_collection.objects
+                                   if obj.type == 'MESH']
+            # Store their materials to preserve them
+            for obj in self.holdout_objects:
+                if obj.data.materials:
+                    for mat in obj.data.materials:
+                        if mat and "Compify_Reflection_Holdout" in mat.name:
+                            self.holdout_materials[obj.name] = mat
 
-        row2 = box.row()
-        row2.prop(context.scene.compify_config, "lights_collection", text="  Footage Lights")
-        row2.operator("scene.compify_add_footage_lights_collection", text="", icon='ADD')
+        proxy_lights = []
+        if context.scene.compify_config.lights_collection != None:
+            proxy_lights = context.scene.compify_config.lights_collection.objects
 
-        layout.separator(factor=1.0)
+        # Get the base material
+        base_material = bpy.data.materials[compify_mat_name(context)]
+        self.main_nodes[base_material.name] = base_material.node_tree.nodes[MAIN_NODE_NAME]
 
-        layout.use_property_split = True
-        layout.prop(context.scene.compify_config, "bake_uv_margin")
-        layout.prop(context.scene.compify_config, "bake_image_res")
+        # Handle reflector materials
+        for obj in self.reflector_objects:
+            if obj.data.materials:
+                for mat in obj.data.materials:
+                    if mat and "_Reflector_" in mat.name and MAIN_NODE_NAME in mat.node_tree.nodes:
+                        self.reflector_materials[mat.name] = mat
+                        self.main_nodes[mat.name] = mat.node_tree.nodes[MAIN_NODE_NAME]
+                        print(f"Found reflector material {mat.name} for baking")
 
-        layout.separator(factor=1.0)
+        # Set up bake image for base material
+        delight_image_node = base_material.node_tree.nodes[BAKE_IMAGE_NODE_NAME]
 
-        #--------
-        layout.operator("material.compify_prep_scene")
-        layout.operator("material.compify_bake")
-        layout.operator("render.compify_render")
+        if len(self.proxy_objects) == 0:
+            return {'CANCELLED'}
+
+        # Ensure we have an image of the right resolution to bake to.
+        bake_image_name = compify_baked_texture_name(context)
+        bake_res = context.scene.compify_config.bake_image_res
+        if bake_image_name in bpy.data.images \
+        and bpy.data.images[bake_image_name].resolution[0] != bake_res:
+            bpy.data.images.remove(bpy.data.images[bake_image_name])
+
+        bake_image = None
+        if bake_image_name in bpy.data.images:
+            bake_image = bpy.data.images[bake_image_name]
+        else:
+            bake_image = bpy.data.images.new(
+                bake_image_name,
+                bake_res, bake_res,
+                alpha=False,
+                float_buffer=True,
+                stereo3d=False,
+                is_data=False,
+                tiled=False,
+            )
+        delight_image_node.image = bake_image
+
+        # Also set bake image for reflector materials
+        for mat in self.reflector_materials.values():
+            if BAKE_IMAGE_NODE_NAME in mat.node_tree.nodes:
+                mat.node_tree.nodes[BAKE_IMAGE_NODE_NAME].image = bake_image
+                print(f"Set bake image for reflector material {mat.name}")
+
+        # Configure ALL materials for baking mode
+        for mat_name, main_node in self.main_nodes.items():
+            main_node.inputs["Do Bake"].default_value = 1.0
+            main_node.inputs["Debug"].default_value = 0.0
+            print(f"Set bake mode for material {mat_name}")
+
+        # Set the base material's bake image node as active
+        delight_image_node.select = True
+        base_material.node_tree.nodes.active = delight_image_node
+
+        # Deselect everything.
+        for obj in context.scene.objects:
+            obj.select_set(False)
+
+        # Build a dictionary of the visibility of non-proxy objects so that
+        # we can restore it afterwards. EXCLUDE holdouts from baking
+        all_bake_objects = self.proxy_objects + self.reflector_objects  # NOT holdouts
+        for obj in context.scene.objects:
+            if obj not in all_bake_objects and obj.name not in proxy_lights:
+                self.hide_render_list[obj.name] = obj.hide_render
+
+        # Make all non-proxy objects invisible (INCLUDING holdouts during baking)
+        for obj_name in self.hide_render_list:
+            bpy.data.objects[obj_name].hide_render = True
+
+        # Set up the baking job event handlers.
+        bpy.app.handlers.object_bake_complete.append(self.post)
+        bpy.app.handlers.object_bake_cancel.append(self.cancelled)
+
+        return {'RUNNING_MODAL'}
+
+    def modal(self, context, event):
+        if event.type == 'TIMER':
+            if not self.is_baking and not self.is_done:
+                self.is_baking = True
+
+                # Select objects for baking (NOT including holdouts!)
+                all_bake_objects = self.proxy_objects + self.reflector_objects
+                for obj in all_bake_objects:
+                    if obj.type == 'MESH':
+                        obj.select_set(True)
+
+                if len(all_bake_objects) > 0:
+                    context.view_layer.objects.active = all_bake_objects[0]
+
+                    # Do the bake.
+                    bpy.ops.object.bake(
+                        "INVOKE_DEFAULT",
+                        type='DIFFUSE',
+                        pass_filter={'DIRECT', 'INDIRECT', 'COLOR'},
+                        margin=context.scene.compify_config.bake_uv_margin,
+                        margin_type='EXTEND',
+                        use_selected_to_active=False,
+                        max_ray_distance=0.0,
+                        cage_extrusion=0.0,
+                        cage_object='',
+                        normal_space='TANGENT',
+                        normal_r='POS_X',
+                        normal_g='POS_Y',
+                        normal_b='POS_Z',
+                        target='IMAGE_TEXTURES',
+                        save_mode='INTERNAL',
+                        use_clear=True,
+                        use_cage=False,
+                        use_split_materials=False,
+                        use_automatic_name=False,
+                        uv_layer='',
+                    )
+            elif self.is_done:
+                # Clean up the handlers and timer.
+                bpy.app.handlers.object_bake_complete.remove(self.post)
+                bpy.app.handlers.object_bake_cancel.remove(self.cancelled)
+                self._timer = None
+
+                # Restore visibility of non-proxy objects.
+                for obj_name in self.hide_render_list:
+                    bpy.data.objects[obj_name].hide_render = self.hide_render_list[obj_name]
+                self.hide_render_list = {}
+
+                # Set ALL materials back to non-bake mode
+                for mat_name, main_node in self.main_nodes.items():
+                    main_node.inputs["Do Bake"].default_value = 0.0
+                    print(f"Disabled bake mode for material {mat_name}")
+
+                self.main_nodes = {}
+                self.reflector_materials = {}
+                self.holdout_materials = {}
+
+                # Reset other self properties.
+                self.is_baking = False
+                self.is_done = False
+                self.proxy_objects = []
+                self.reflector_objects = []
+                self.holdout_objects = []
+
+                return {'FINISHED'}
+
+        return {'PASS_THROUGH'}
+
+    def reset(self):
+        self.is_baking = False
+        self.is_done = False
+
+def update_reflection_holdout(self, context):
+    """Update object to be a reflection holdout (blocks reflections but invisible)"""
+    obj = context.object
+    if not obj:
+        return
+
+    if obj.compify_reflection.reflection_holdout:
+        # Enable glossy visibility so it blocks reflections
+        obj.visible_glossy = True
+        if obj.type == 'LIGHT' and hasattr(obj.data, 'visible_glossy'):
+            obj.data.visible_glossy = True
+
+        # Apply holdout material if it's a mesh
+        if obj.type == 'MESH':
+            apply_reflection_holdout_material(obj, context)
+    else:
+        # Remove holdout material if it exists
+        if obj.type == 'MESH':
+            remove_reflection_holdout_material(obj, context)
 
 
-class CompifyCameraPanel(bpy.types.Panel):
-    """Configure cameras for 3D compositing."""
-    bl_label = "Compify"
-    bl_idname = "DATA_PT_compify_camera"
-    bl_space_type = 'PROPERTIES'
-    bl_region_type = 'WINDOW'
-    bl_context = "data"
+def update_reflector_material_properties(self, context):
+    """Update material properties when object reflection settings change"""
+    obj = context.object
+    if not obj or obj.type != 'MESH' or not hasattr(obj, 'compify_reflection'):
+        return
 
-    @classmethod
-    def poll(cls, context):
-        return context.active_object.type == 'CAMERA'
+    # Find the reflector material for this object
+    compify_material = get_compify_material(context)
+    if not compify_material:
+        return
 
-    def draw(self, context):
-        wm = context.window_manager
-        layout = self.layout
+    reflector_material_name = f"{compify_material.name}_Reflector_{obj.name}"
 
-        col = layout.column()
-        col.operator("material.compify_camera_project_new")
+    if reflector_material_name in bpy.data.materials:
+        reflector_material = bpy.data.materials[reflector_material_name]
+
+        # Get global blend mode
+        blend_mode = context.scene.compify_config.reflection_blend_mode
+
+        # Update the reflection settings
+        modify_compify_material_for_reflection(
+            reflector_material,
+            obj.compify_reflection.reflection_metallic,
+            obj.compify_reflection.reflection_roughness,
+            obj.compify_reflection.reflection_strength,
+            blend_mode
+        )
 
 
-#========================================================
+def update_reflection_visibility(self, context):
+    """Update reflection visibility when object settings change"""
+    obj = context.object
+    if not obj:
+        return
+
+    if obj.type == 'MESH':
+        obj.visible_glossy = obj.compify_reflection.visible_in_reflections
+        print(f"Updated mesh {obj.name}: visible_glossy = {obj.compify_reflection.visible_in_reflections}")
+    elif obj.type == 'LIGHT':
+        obj.visible_glossy = obj.compify_reflection.visible_in_reflections
+        if hasattr(obj.data, 'visible_glossy'):
+            obj.data.visible_glossy = obj.compify_reflection.visible_in_reflections
+        print(f"Updated light {obj.name}: visible_glossy = {obj.compify_reflection.visible_in_reflections}")
+    elif obj.type in ['CURVE', 'SURFACE', 'META', 'FONT']:
+        obj.visible_glossy = obj.compify_reflection.visible_in_reflections
+        print(f"Updated {obj.type.lower()} {obj.name}: visible_glossy = {obj.compify_reflection.visible_in_reflections}")
 
 
-# Fetches the current scene's compify material if it exists.
-#
-# Returns the material if it exists and None if it doesn't.
+def change_footage_material_clip(config, context):
+    if config.footage == None:
+        return
+    mat = get_compify_material(context)
+    if mat != None:
+        footage_node = mat.node_tree.nodes["Input Footage"]
+        footage_node.image = config.footage
+        footage_node.image_user.frame_duration = config.footage.frame_duration
+
+
+def change_footage_camera(config, context):
+    if config.camera == None or config.camera.type != 'CAMERA':
+        return
+    mat = get_compify_material(context)
+    if mat != None:
+        group = ensure_camera_project_group(config.camera)
+        mat.node_tree.nodes["Camera Project"].node_tree = group
+
+def apply_reflection_holdout_material(obj, context):
+    """Apply a material that is COMPLETELY INVISIBLE to camera but occludes in reflections"""
+
+    # Create holdout material name
+    holdout_mat_name = f"Compify_Reflection_Holdout_{obj.name}"
+
+    # Check if material already exists
+    if holdout_mat_name in bpy.data.materials:
+        holdout_mat = bpy.data.materials[holdout_mat_name]
+        # Clear it to rebuild
+        for node in holdout_mat.node_tree.nodes:
+            holdout_mat.node_tree.nodes.remove(node)
+    else:
+        # Create new holdout material
+        holdout_mat = bpy.data.materials.new(name=holdout_mat_name)
+        holdout_mat.use_nodes = True
+
+        # Clear default nodes
+        for node in holdout_mat.node_tree.nodes:
+            holdout_mat.node_tree.nodes.remove(node)
+
+    # Create nodes for COMPLETE invisibility except in reflections
+    output_node = holdout_mat.node_tree.nodes.new(type='ShaderNodeOutputMaterial')
+    light_path = holdout_mat.node_tree.nodes.new(type='ShaderNodeLightPath')
+
+    # FULLY TRANSPARENT for everything except reflections
+    transparent_shader = holdout_mat.node_tree.nodes.new(type='ShaderNodeBsdfTransparent')
+    transparent_shader.inputs['Color'].default_value = (1.0, 1.0, 1.0, 1.0)
+
+    # BLACK shader for reflections only (occludes)
+    black_shader = holdout_mat.node_tree.nodes.new(type='ShaderNodeBsdfDiffuse')
+    black_shader.inputs['Color'].default_value = (0.0, 0.0, 0.0, 1.0)  # Pure black
+    black_shader.inputs['Roughness'].default_value = 1.0  # No glossiness
+
+    # Mix shader - switches based on ray type
+    mix_shader = holdout_mat.node_tree.nodes.new(type='ShaderNodeMixShader')
+
+    # Position nodes
+    output_node.location = (600, 0)
+    mix_shader.location = (400, 0)
+    light_path.location = (0, 100)
+    transparent_shader.location = (200, -100)
+    black_shader.location = (200, 0)
+
+    # Connect nodes
+    # When Is Glossy Ray = 0 (not a reflection), use transparent (input 1)
+    # When Is Glossy Ray = 1 (is a reflection), use black (input 2)
+    holdout_mat.node_tree.links.new(light_path.outputs['Is Glossy Ray'], mix_shader.inputs['Fac'])
+    holdout_mat.node_tree.links.new(transparent_shader.outputs['BSDF'], mix_shader.inputs[1])
+    holdout_mat.node_tree.links.new(black_shader.outputs['BSDF'], mix_shader.inputs[2])
+    holdout_mat.node_tree.links.new(mix_shader.outputs['Shader'], output_node.inputs['Surface'])
+
+    # Set material blend mode for transparency (compatible with Blender 4.3-5.0)
+    try:
+        # Try Blender 4.x method first
+        if hasattr(holdout_mat, 'blend_method'):
+            holdout_mat.blend_method = 'BLEND'
+        # Try Blender 5.x method
+        elif hasattr(holdout_mat, 'surface'):
+            if hasattr(holdout_mat.surface, 'render_method'):
+                holdout_mat.surface.render_method = 'BLENDED'
+    except AttributeError:
+        pass
+
+    # Set shadow mode (compatible with different Blender versions)
+    try:
+        if hasattr(holdout_mat, 'shadow_method'):
+            holdout_mat.shadow_method = 'NONE'
+        elif hasattr(holdout_mat, 'shadow_mode'):
+            holdout_mat.shadow_mode = 'NONE'
+    except AttributeError:
+        pass
+
+    # Handle backface culling settings
+    try:
+        if hasattr(holdout_mat, 'show_transparent_back'):
+            holdout_mat.show_transparent_back = False
+        if hasattr(holdout_mat, 'use_backface_culling'):
+            holdout_mat.use_backface_culling = False
+        elif hasattr(holdout_mat, 'backface_culling'):
+            holdout_mat.backface_culling = 'OFF'
+    except AttributeError:
+        pass
+
+    # Set Cycles-specific settings if available (with proper error handling)
+    if hasattr(holdout_mat, 'cycles'):
+        cycles_settings = holdout_mat.cycles
+        # Only set attributes that actually exist
+        if hasattr(cycles_settings, 'use_transparent_shadow'):
+            cycles_settings.use_transparent_shadow = True
+        # In Blender 5.0, transparent shadows might be handled differently
+        # Check for other possible attributes
+        if hasattr(cycles_settings, 'transparent_shadow'):
+            cycles_settings.transparent_shadow = True
+
+    # Apply the material to the object
+    obj.data.materials.clear()
+    obj.data.materials.append(holdout_mat)
+
+    # Set object visibility properties
+    obj.visible_camera = True  # Must be visible to camera (but shader makes it transparent)
+    obj.visible_diffuse = True  # Visible to diffuse
+    obj.visible_glossy = True  # MUST be visible to glossy to occlude reflections
+    obj.visible_transmission = True  # Visible to transmission
+    obj.visible_volume_scatter = False  # Not visible to volume
+    obj.visible_shadow = False  # DON'T cast shadows
+
+    # IMPORTANT: Make sure object is NOT a holdout at object level
+    obj.is_holdout = False
+
+    # If using Cycles, ensure proper ray visibility (with error handling)
+    if hasattr(obj, 'cycles_visibility'):
+        try:
+            obj.cycles_visibility.camera = True  # Visible to camera (shader handles transparency)
+            obj.cycles_visibility.diffuse = True
+            obj.cycles_visibility.glossy = True  # Must be true to occlude
+            obj.cycles_visibility.transmission = True
+            obj.cycles_visibility.scatter = False
+            obj.cycles_visibility.shadow = False  # No shadows from holdout
+        except AttributeError as e:
+            # Some attributes might not exist in newer versions
+            print(f"Warning: Could not set some Cycles visibility settings: {e}")
+
+    print(f"Applied invisible holdout material to {obj.name} - invisible to camera, occludes in reflections")
+
+
+def setup_holdout_for_scene(context):
+    """Ensure scene settings are correct for holdout materials to work"""
+    scene = context.scene
+
+    # Ensure Cycles is using proper transparency settings
+    if scene.render.engine == 'CYCLES':
+        # Enable transparency in film settings (with version compatibility)
+        try:
+            if hasattr(scene.cycles, 'film_transparent'):
+                scene.cycles.film_transparent = True
+            elif hasattr(scene.cycles, 'transparent'):
+                scene.cycles.transparent = True
+        except AttributeError:
+            pass
+
+        # Set proper transparency bounces (if the attribute exists)
+        try:
+            if hasattr(scene.cycles, 'transparent_max_bounces'):
+                scene.cycles.transparent_max_bounces = max(scene.cycles.transparent_max_bounces, 8)
+            elif hasattr(scene.cycles, 'max_transparent_bounces'):
+                scene.cycles.max_transparent_bounces = max(scene.cycles.max_transparent_bounces, 8)
+        except AttributeError:
+            pass
+
+    print("Scene configured for holdout transparency")
+
+
+def remove_reflection_holdout_material(obj, context):
+    """Remove holdout material from object"""
+
+    holdout_mat_name = f"Compify_Reflection_Holdout_{obj.name}"
+
+    # Check if object has the holdout material
+    if obj.data.materials:
+        for i, mat in enumerate(obj.data.materials):
+            if mat and mat.name == holdout_mat_name:
+                # Remove from object
+                obj.data.materials.clear()
+
+                # Delete the material if no other users
+                if mat.users == 0:
+                    bpy.data.materials.remove(mat)
+
+                print(f"Removed reflection holdout material from {obj.name}")
+                break
+
+
 def get_compify_material(context):
+    """Fetches the current scene's compify material if it exists."""
     name = compify_mat_name(context)
     if name in bpy.data.materials:
         return bpy.data.materials[name]
@@ -140,10 +523,8 @@ def get_compify_material(context):
         return None
 
 
-# Ensures that the Compify Footage material exists for this scene.
-#
-# It will create it if it doesn't exist, and returns the material.
 def ensure_compify_material(context):
+    """Ensures that the Compify Footage material exists for this scene."""
     mat = get_compify_material(context)
     if mat != None:
         return mat
@@ -155,13 +536,28 @@ def ensure_compify_material(context):
         )
 
 
-# Creates a Compify Footage material.
 def create_compify_material(name, camera, footage):
+    """Creates a Compify Footage material."""
     # Create a new completely empty node-based material.
     mat = bpy.data.materials.new(name)
     mat.use_nodes = True
-    mat.blend_method = 'HASHED'
-    mat.shadow_method = 'HASHED'
+
+    # In Blender 4.3, 'shadow_method' and 'blend_method' attributes have changed
+    try:
+        mat.blend_method = 'HASHED'
+    except (AttributeError, TypeError):
+        # For Blender 4.3+
+        if hasattr(mat, 'blend_mode'):
+            mat.blend_mode = 'HASHED'
+
+    try:
+        mat.shadow_method = 'HASHED'
+    except (AttributeError, TypeError):
+        # For Blender 4.3+
+        if hasattr(mat, 'shadow_mode'):
+            mat.shadow_mode = 'HASHED'
+
+    # Clear all existing nodes
     for node in mat.node_tree.nodes:
         mat.node_tree.nodes.remove(node)
 
@@ -207,7 +603,7 @@ def create_compify_material(name, camera, footage):
 
     # Configure the nodes.
     camera_project.node_tree = ensure_camera_project_group(camera)
-    if footage.size[0] > 0 and footage.size[1] > 0:
+    if footage and hasattr(footage, 'size') and footage.size[0] > 0 and footage.size[1] > 0:
         camera_project.inputs['Aspect Ratio'].default_value = footage.size[0] / footage.size[1]
     else:
         # Default to the output render aspect ratio if we're on a bogus footage frame.
@@ -218,11 +614,21 @@ def create_compify_material(name, camera, footage):
     baking_uv_map.uv_map = UV_LAYER_NAME
 
     input_footage.image = footage
-    input_footage.interpolation = 'Closest'
+    if hasattr(input_footage, 'interpolation'):
+        input_footage.interpolation = 'Closest'
+    else:
+        try:
+            input_footage.interpolation_type = 'Closest'
+        except AttributeError:
+            pass
+
     input_footage.projection = 'FLAT'
     input_footage.extension = 'EXTEND'
-    input_footage.image_user.frame_duration = footage.frame_duration
-    input_footage.image_user.use_auto_refresh = True
+
+    if hasattr(input_footage, 'image_user') and footage:
+        if hasattr(footage, 'frame_duration'):
+            input_footage.image_user.frame_duration = footage.frame_duration
+        input_footage.image_user.use_auto_refresh = True
 
     feathered_square.node_tree = ensure_feathered_square_group()
     feathered_square.inputs['Feather'].default_value = 0.05
@@ -242,23 +648,1025 @@ def create_compify_material(name, camera, footage):
     return mat
 
 
-def change_footage_material_clip(config, context):
-    if config.footage == None:
-        return
-    mat = get_compify_material(context)
-    if mat != None:
-        footage_node = mat.node_tree.nodes["Input Footage"]
-        footage_node.image = config.footage
-        footage_node.image_user.frame_duration = config.footage.frame_duration
+def setup_reflection_visibility(context):
+    """ONLY objects in reflectees collection are visible in reflections + preserve holdouts"""
+    scene = context.scene
+    reflectees_collection = scene.compify_config.reflectees_collection
+    holdout_collection = scene.compify_config.holdout_collection
+
+    print("Setting up reflection visibility - ONLY selected objects reflect")
+
+    # IMPORTANT: Hide world/environment from ALL reflections
+    if scene.world:
+        scene.world.cycles_visibility.glossy = False
+        scene.world.cycles_visibility.transmission = False
+        print("World/environment hidden from ALL reflections")
+
+    # Set ALL objects to NOT be visible in reflections by default
+    for obj in scene.objects:
+        obj.visible_glossy = False
+        if obj.type == 'LIGHT' and hasattr(obj.data, 'visible_glossy'):
+            obj.data.visible_glossy = False
+        print(f"Set {obj.name} to NOT reflect")
+
+    # ONLY objects in reflectees collection are visible in reflections
+    if reflectees_collection:
+        print(f"Making ONLY these objects visible in reflections:")
+        for obj in reflectees_collection.all_objects:
+            obj.visible_glossy = True
+            if obj.type == 'LIGHT' and hasattr(obj.data, 'visible_glossy'):
+                obj.data.visible_glossy = True
+            print(f"  - {obj.name} WILL reflect")
+
+    # Re-enable glossy visibility for holdouts (they need to block reflections)
+    if holdout_collection:
+        print(f"Ensuring holdouts block reflections:")
+        for obj in holdout_collection.all_objects:
+            obj.visible_glossy = True  # Must be true to block reflections
+            print(f"  - {obj.name} will BLOCK reflections (holdout)")
+
+    print("Reflection visibility setup complete!")
 
 
-def change_footage_camera(config, context):
-    if config.camera == None or config.camera.type != 'CAMERA':
+def modify_compify_material_for_reflection(material, reflection_metallic=0.0, reflection_roughness=0.0,
+                                           reflection_strength=0.5, blend_mode='ADD', obj=None):
+    """Add reflections to existing Compify material with enhanced roughness support"""
+    if not material or not material.node_tree:
         return
-    mat = get_compify_material(context)
-    if mat != None:
-        group = ensure_camera_project_group(config.camera)
-        mat.node_tree.nodes["Camera Project"].node_tree = group
+
+    # Find required nodes
+    compify_node = None
+    output_node = None
+    for node in material.node_tree.nodes:
+        if node.name == MAIN_NODE_NAME:
+            compify_node = node
+        elif node.type == 'OUTPUT_MATERIAL':
+            output_node = node
+
+    if not compify_node or not output_node:
+        return
+
+    # Get roughness source from object if available
+    roughness_source = 'VALUE'  # Default
+    roughness_texture = None
+    if obj and hasattr(obj, 'compify_reflection'):
+        roughness_source = obj.compify_reflection.roughness_source
+        roughness_texture = obj.compify_reflection.roughness_texture
+
+    # Check if reflection nodes already exist and just update them
+    has_valid_setup = True
+    required_nodes = ["Compify_Reflection_Glossy", "Compify_Reflection_Strength",
+                      "Compify_Reflection_Mix", "Compify_Blend_Reflections"]
+
+    for node_name in required_nodes:
+        if node_name not in material.node_tree.nodes:
+            has_valid_setup = False
+            break
+
+    if has_valid_setup:
+        # Just update the existing values
+        print(f"Updating existing reflection nodes for {material.name}")
+
+        glossy_bsdf = material.node_tree.nodes["Compify_Reflection_Glossy"]
+
+        # Handle roughness based on source
+        if roughness_source == 'VALUE':
+            # Disconnect any roughness texture connections and use direct value
+            for link in list(material.node_tree.links):
+                if link.to_socket == glossy_bsdf.inputs['Roughness']:
+                    material.node_tree.links.remove(link)
+            glossy_bsdf.inputs['Roughness'].default_value = reflection_roughness
+            # Don't remove texture nodes - user might switch back and want to keep their ColorRamp settings
+        elif roughness_source == 'TEXTURE' and roughness_texture:
+            setup_texture_roughness(material, glossy_bsdf, roughness_texture)
+        elif roughness_source == 'COMPIFY':
+            setup_compify_roughness(material, glossy_bsdf, compify_node)
+        else:
+            # Fallback to value
+            for link in list(material.node_tree.links):
+                if link.to_socket == glossy_bsdf.inputs['Roughness']:
+                    material.node_tree.links.remove(link)
+            glossy_bsdf.inputs['Roughness'].default_value = reflection_roughness
+
+        # Update other settings
+        if "Compify_Reflection_Metallic" in material.node_tree.nodes:
+            metallic_node = material.node_tree.nodes["Compify_Reflection_Metallic"]
+            metallic_node.inputs['Metallic'].default_value = reflection_metallic
+
+        # Update strength via ColorRamp
+        strength_node = material.node_tree.nodes["Compify_Reflection_Strength"]
+        strength_node.color_ramp.elements[1].color = (reflection_strength, reflection_strength, reflection_strength, 1.0)
+
+        # Update Mix RGB Fac to ensure it's always at 1.0
+        mix_rgb = material.node_tree.nodes["Compify_Reflection_Mix"]
+        mix_rgb.inputs['Fac'].default_value = 1.0
+
+        print(f"Successfully updated reflection settings for {material.name}")
+        return
+
+    # If we get here, we need to create the reflection setup from scratch
+    print(f"Creating new reflection setup for {material.name}")
+
+    # Clean up any partial/broken reflection nodes first
+    cleanup_reflection_nodes(material)
+
+    # Create fresh reflection nodes
+    create_reflection_nodes(material, compify_node, output_node, reflection_metallic,
+                           reflection_roughness, reflection_strength, blend_mode,
+                           roughness_source, roughness_texture, obj)
+
+def setup_texture_roughness(material, glossy_bsdf, roughness_texture):
+    """Set up texture-based roughness with ColorRamp remapping - PRESERVES existing ColorRamp"""
+
+    # Check if texture and remap nodes already exist
+    texture_node = None
+    remap_node = None
+
+    if "Compify_Texture_Roughness" in material.node_tree.nodes:
+        texture_node = material.node_tree.nodes["Compify_Texture_Roughness"]
+
+    if "Compify_Texture_Roughness_Remap" in material.node_tree.nodes:
+        remap_node = material.node_tree.nodes["Compify_Texture_Roughness_Remap"]
+
+    # Create texture node if it doesn't exist
+    if not texture_node:
+        texture_node = material.node_tree.nodes.new(type='ShaderNodeTexImage')
+        texture_node.name = "Compify_Texture_Roughness"
+        texture_node.location = (glossy_bsdf.location[0] - 600, glossy_bsdf.location[1] - 200)
+
+    # Always update the texture reference
+    texture_node.image = roughness_texture
+
+    # Create ColorRamp node if it doesn't exist (PRESERVE if it does!)
+    if not remap_node:
+        remap_node = material.node_tree.nodes.new(type='ShaderNodeValToRGB')
+        remap_node.name = "Compify_Texture_Roughness_Remap"
+        remap_node.location = (glossy_bsdf.location[0] - 300, glossy_bsdf.location[1] - 200)
+
+        # Set up default linear remap ONLY for new nodes
+        remap_node.color_ramp.elements[0].position = 0.0
+        remap_node.color_ramp.elements[0].color = (0.0, 0.0, 0.0, 1.0)
+        remap_node.color_ramp.elements[1].position = 1.0
+        remap_node.color_ramp.elements[1].color = (1.0, 1.0, 1.0, 1.0)
+        print(f"Created new texture roughness ColorRamp for {material.name}")
+    else:
+        print(f"Preserved existing texture roughness ColorRamp for {material.name}")
+
+    # Ensure proper connections (may have been broken)
+    # Remove any existing connections to the glossy roughness input first
+    for link in list(material.node_tree.links):
+        if link.to_socket == glossy_bsdf.inputs['Roughness']:
+            material.node_tree.links.remove(link)
+
+    # Connect: Texture -> ColorRamp -> Glossy Roughness
+    material.node_tree.links.new(texture_node.outputs['Color'], remap_node.inputs['Fac'])
+    material.node_tree.links.new(remap_node.outputs['Color'], glossy_bsdf.inputs['Roughness'])
+
+def setup_compify_roughness(material, glossy_bsdf, compify_node):
+    """Set up Compify footage-based roughness with ColorRamp remapping - PRESERVES existing ColorRamp"""
+
+    # Check if remap node already exists
+    remap_node = None
+    if "Compify_Roughness_Remap" in material.node_tree.nodes:
+        remap_node = material.node_tree.nodes["Compify_Roughness_Remap"]
+
+    # Create ColorRamp node if it doesn't exist (PRESERVE if it does!)
+    if not remap_node:
+        remap_node = material.node_tree.nodes.new(type='ShaderNodeValToRGB')
+        remap_node.name = "Compify_Roughness_Remap"
+        remap_node.location = (glossy_bsdf.location[0] - 300, glossy_bsdf.location[1] - 200)
+
+        # Set up default linear remap ONLY for new nodes
+        remap_node.color_ramp.elements[0].position = 0.0
+        remap_node.color_ramp.elements[0].color = (0.0, 0.0, 0.0, 1.0)
+        remap_node.color_ramp.elements[1].position = 1.0
+        remap_node.color_ramp.elements[1].color = (1.0, 1.0, 1.0, 1.0)
+        print(f"Created new Compify roughness ColorRamp for {material.name}")
+    else:
+        print(f"Preserved existing Compify roughness ColorRamp for {material.name}")
+
+    # Find the footage input from the compify material
+    footage_input = None
+    for node in material.node_tree.nodes:
+        if node.name == "Input Footage" and node.type == 'TEX_IMAGE':
+            footage_input = node
+            break
+
+    if footage_input:
+        # Remove any existing connections to the glossy roughness input first
+        for link in list(material.node_tree.links):
+            if link.to_socket == glossy_bsdf.inputs['Roughness']:
+                material.node_tree.links.remove(link)
+
+        # Connect: Compify Footage -> ColorRamp -> Glossy Roughness
+        material.node_tree.links.new(footage_input.outputs['Color'], remap_node.inputs['Fac'])
+        material.node_tree.links.new(remap_node.outputs['Color'], glossy_bsdf.inputs['Roughness'])
+        print(f"Connected Compify footage roughness with preserved ColorRamp for {material.name}")
+    else:
+        print(f"Warning: Could not find footage input for Compify roughness in {material.name}")
+
+
+def remove_roughness_texture_nodes(material):
+    """Remove texture roughness nodes"""
+    nodes_to_remove = ["Compify_Texture_Roughness", "Compify_Texture_Roughness_Remap"]
+    for node_name in nodes_to_remove:
+        if node_name in material.node_tree.nodes:
+            material.node_tree.nodes.remove(material.node_tree.nodes[node_name])
+
+
+def remove_compify_roughness_nodes(material):
+    """Remove Compify roughness nodes"""
+    nodes_to_remove = ["Compify_Roughness_Remap"]
+    for node_name in nodes_to_remove:
+        if node_name in material.node_tree.nodes:
+            material.node_tree.nodes.remove(material.node_tree.nodes[node_name])
+
+
+def cleanup_reflection_nodes(material):
+    """Clean up any partial/broken reflection nodes"""
+    reflection_node_names = ["Compify_Reflection_Glossy", "Compify_Reflection_Metallic",
+                             "Compify_Reflection_Strength", "Compify_Reflection_Mix",
+                             "Compify_Blend_Reflections", "Compify_Mix_Metallic",
+                             "Compify_Add_Reflections", "Compify_Reflection_Strength_Mixer",
+                             "Compify_Reflection_Transparent", "Compify_Reflection_Alpha_Mult",
+                             "Compify_Texture_Roughness", "Compify_Texture_Roughness_Remap",
+                             "Compify_Roughness_Remap"]
+
+    for node_name in reflection_node_names:
+        if node_name in material.node_tree.nodes:
+            material.node_tree.nodes.remove(material.node_tree.nodes[node_name])
+            print(f"Removed incomplete node: {node_name}")
+
+
+def create_reflection_nodes(material, compify_node, output_node, reflection_metallic,
+                           reflection_roughness, reflection_strength, blend_mode,
+                           roughness_source='VALUE', roughness_texture=None, obj=None):
+    """Create the reflection node setup with proper roughness handling"""
+
+    # Create Glossy BSDF for reflections
+    glossy_bsdf = material.node_tree.nodes.new(type='ShaderNodeBsdfGlossy')
+    glossy_bsdf.name = "Compify_Reflection_Glossy"
+    glossy_bsdf.inputs['Color'].default_value = (1.0, 1.0, 1.0, 1.0)
+    glossy_bsdf.inputs['Roughness'].default_value = reflection_roughness
+
+    # Create Principled BSDF for metallic reflections (optional)
+    metallic_bsdf = None
+    if reflection_metallic > 0:
+        metallic_bsdf = material.node_tree.nodes.new(type='ShaderNodeBsdfPrincipled')
+        metallic_bsdf.name = "Compify_Reflection_Metallic"
+        metallic_bsdf.inputs['Base Color'].default_value = (1.0, 1.0, 1.0, 1.0)
+        metallic_bsdf.inputs['Metallic'].default_value = reflection_metallic
+        metallic_bsdf.inputs['Roughness'].default_value = reflection_roughness
+        metallic_bsdf.inputs['IOR'].default_value = 1.45
+
+    # Create ColorRamp to control reflection strength
+    strength_ramp = material.node_tree.nodes.new(type='ShaderNodeValToRGB')
+    strength_ramp.name = "Compify_Reflection_Strength"
+    strength_ramp.color_ramp.elements[0].color = (0.0, 0.0, 0.0, 1.0)
+    strength_ramp.color_ramp.elements[1].color = (reflection_strength, reflection_strength, reflection_strength, 1.0)
+
+    # Create Mix RGB to apply strength
+    mix_rgb = material.node_tree.nodes.new(type='ShaderNodeMixRGB')
+    mix_rgb.name = "Compify_Reflection_Mix"
+    mix_rgb.blend_type = 'MULTIPLY'
+    mix_rgb.inputs['Color1'].default_value = (1.0, 1.0, 1.0, 1.0)
+
+    # Choose blend node based on mode
+    if blend_mode == 'ADD':
+        blend_shader = material.node_tree.nodes.new(type='ShaderNodeAddShader')
+        blend_shader.name = "Compify_Blend_Reflections"
+    else:  # MIX mode
+        blend_shader = material.node_tree.nodes.new(type='ShaderNodeMixShader')
+        blend_shader.name = "Compify_Blend_Reflections"
+        blend_shader.inputs[0].default_value = reflection_strength
+
+    # Position nodes
+    output_x, output_y = output_node.location
+    blend_shader.location = (output_x - 200, output_y)
+
+    if metallic_bsdf:
+        # Mix between glossy and metallic
+        mix_shader = material.node_tree.nodes.new(type='ShaderNodeMixShader')
+        mix_shader.name = "Compify_Mix_Metallic"
+        mix_shader.location = (output_x - 400, output_y - 100)
+        mix_shader.inputs[0].default_value = reflection_metallic
+
+        glossy_bsdf.location = (output_x - 600, output_y - 50)
+        metallic_bsdf.location = (output_x - 600, output_y - 150)
+        mix_rgb.location = (output_x - 800, output_y - 100)
+        strength_ramp.location = (output_x - 1000, output_y - 100)
+    else:
+        glossy_bsdf.location = (output_x - 400, output_y - 100)
+        mix_rgb.location = (output_x - 600, output_y - 100)
+        strength_ramp.location = (output_x - 800, output_y - 100)
+
+    # Set up roughness based on source AFTER positioning
+    if roughness_source == 'TEXTURE' and roughness_texture:
+        setup_texture_roughness(material, glossy_bsdf, roughness_texture)
+    elif roughness_source == 'COMPIFY':
+        setup_compify_roughness(material, glossy_bsdf, compify_node)
+    # else: default value-based roughness is already set
+
+    # Disconnect existing connection
+    for link in material.node_tree.links:
+        if link.to_node == output_node and link.to_socket.name == 'Surface':
+            material.node_tree.links.remove(link)
+            break
+
+    # Connect the nodes
+    material.node_tree.links.new(strength_ramp.outputs['Color'], mix_rgb.inputs['Color2'])
+    material.node_tree.links.new(mix_rgb.outputs['Color'], glossy_bsdf.inputs['Color'])
+
+    if metallic_bsdf:
+        # Mix glossy and metallic based on metallic value
+        material.node_tree.links.new(glossy_bsdf.outputs['BSDF'], mix_shader.inputs[1])
+        material.node_tree.links.new(metallic_bsdf.outputs['BSDF'], mix_shader.inputs[2])
+        # Connect to blend shader
+        material.node_tree.links.new(compify_node.outputs['Shader'], blend_shader.inputs[0])
+        material.node_tree.links.new(mix_shader.outputs['Shader'], blend_shader.inputs[1])
+    else:
+        # Direct connection for glossy only
+        material.node_tree.links.new(compify_node.outputs['Shader'], blend_shader.inputs[0])
+        material.node_tree.links.new(glossy_bsdf.outputs['BSDF'], blend_shader.inputs[1])
+
+    material.node_tree.links.new(blend_shader.outputs['Shader'], output_node.inputs['Surface'])
+
+    print(f"Reflections added with {blend_mode} blending and {roughness_source} roughness")
+
+def setup_reflector_materials(context):
+    """Setup materials for reflector objects - PRESERVE HOLDOUTS"""
+    scene = context.scene
+
+    reflectors_collection = scene.compify_config.reflectors_collection
+    holdout_collection = scene.compify_config.holdout_collection
+
+    if not reflectors_collection:
+        print("No reflectors collection found")
+        return
+
+    print(f"Setting up reflector materials for {len(reflectors_collection.all_objects)} objects")
+
+    # Get the main compify material
+    compify_material = get_compify_material(context)
+    if not compify_material:
+        print("No Compify material found - run Prep Scene first")
+        return
+
+    # Get global reflection settings
+    global_roughness = scene.compify_config.reflection_roughness
+    global_strength = scene.compify_config.reflection_strength
+    global_blend_mode = scene.compify_config.reflection_blend_mode
+
+    for obj in reflectors_collection.all_objects:
+        if obj.type == 'MESH':
+            print(f"Processing reflector object: {obj.name}")
+
+            # SKIP if object is a holdout
+            if holdout_collection and obj in holdout_collection.all_objects:
+                print(f"Skipping {obj.name} - it's a holdout")
+                continue
+
+            # Check if object has holdout material - if so, skip it
+            has_holdout_mat = False
+            if obj.data.materials:
+                for mat in obj.data.materials:
+                    if mat and "Compify_Reflection_Holdout" in mat.name:
+                        has_holdout_mat = True
+                        break
+
+            if has_holdout_mat:
+                print(f"Skipping {obj.name} - has holdout material")
+                continue
+
+            # Ensure the object has reflection properties
+            if not hasattr(obj, 'compify_reflection'):
+                print(f"Object {obj.name} missing reflection properties - skipping")
+                continue
+
+            # Set this object as a reflector
+            obj.compify_reflection.is_reflector = True
+
+            # Create a unique reflector material for this object
+            reflector_material_name = f"{compify_material.name}_Reflector_{obj.name}"
+
+            # Check if material already exists and is properly assigned
+            reflector_material = None
+            if reflector_material_name in bpy.data.materials:
+                reflector_material = bpy.data.materials[reflector_material_name]
+                print(f"Found existing reflector material: {reflector_material_name}")
+
+                # Check if it's already assigned to the object
+                material_assigned = False
+                if obj.data.materials:
+                    for mat in obj.data.materials:
+                        if mat and mat.name == reflector_material_name:
+                            material_assigned = True
+                            break
+
+                if not material_assigned:
+                    # Material exists but not assigned - assign it
+                    obj.data.materials.clear()
+                    obj.data.materials.append(reflector_material)
+                    print(f"Re-assigned existing reflector material to {obj.name}")
+            else:
+                print(f"Creating new reflector material: {reflector_material_name}")
+                # Create a copy of the compify material
+                reflector_material = compify_material.copy()
+                reflector_material.name = reflector_material_name
+
+                # Assign the new material
+                obj.data.materials.clear()
+                obj.data.materials.append(reflector_material)
+                print(f"Assigned new reflector material to {obj.name}")
+
+            # Use individual object settings if available, otherwise use global settings
+            obj_roughness = obj.compify_reflection.reflection_roughness if obj.compify_reflection.reflection_roughness > 0 else global_roughness
+            obj_strength = obj.compify_reflection.reflection_strength if obj.compify_reflection.reflection_strength > 0 else global_strength
+
+            # Modify the material to add/update reflection capability
+            print(f"Updating reflection nodes for {reflector_material.name}")
+            modify_compify_material_for_reflection(
+                reflector_material,
+                obj.compify_reflection.reflection_metallic,
+                obj_roughness,
+                obj_strength,
+                global_blend_mode
+            )
+
+            # Make sure the reflector is visible to everything
+            obj.visible_camera = True
+            obj.visible_diffuse = True
+            obj.visible_glossy = True
+
+            print(f"Successfully setup reflector: {obj.name}")
+
+class CompifyReflectionProperties(bpy.types.PropertyGroup):
+    """Properties for controlling reflections on individual objects"""
+
+    is_reflector: bpy.props.BoolProperty(
+        name="Act as Reflector",
+        description="This object will act as a reflective surface",
+        default=False,
+        update=update_reflector_material_properties
+    )
+
+    reflection_strength: bpy.props.FloatProperty(
+        name="Reflection Strength",
+        description="Strength of reflections on this surface",
+        default=0.0,
+        min=0.0,
+        max=1.0,
+        update=update_reflector_material_properties
+    )
+
+    reflection_roughness: bpy.props.FloatProperty(
+        name="Reflection Roughness",
+        description="Roughness of the reflective surface (0=mirror, 1=blurry)",
+        default=0.0,
+        min=0.0,
+        max=1.0,
+        update=update_reflector_material_properties
+    )
+
+    reflection_metallic: bpy.props.FloatProperty(
+        name="Metallic",
+        description="Metallic property of the reflective surface",
+        default=0.0,
+        min=0.0,
+        max=1.0,
+        update=update_reflector_material_properties
+    )
+
+    roughness_source: bpy.props.EnumProperty(
+        name="Roughness Source",
+        description="Source for roughness values",
+        items=[
+            ('VALUE', "Value", "Use the roughness slider value"),
+            ('TEXTURE', "Texture", "Use a custom texture for roughness"),
+            ('COMPIFY', "Compify Footage", "Use the Compify footage as roughness map")
+        ],
+        default='VALUE',
+        update=update_reflector_material_properties
+    )
+
+    roughness_texture: bpy.props.PointerProperty(
+        type=bpy.types.Image,
+        name="Roughness Texture",
+        description="Texture to use for roughness mapping",
+        update=update_reflector_material_properties
+    )
+
+    roughness_remap_invert: bpy.props.BoolProperty(
+        name="Invert Roughness",
+        description="Invert the roughness values (dark=rough becomes dark=smooth)",
+        default=False,
+        update=update_reflector_material_properties
+    )
+
+    roughness_remap_contrast: bpy.props.FloatProperty(
+        name="Roughness Contrast",
+        description="Adjust contrast of the roughness map",
+        default=1.0,
+        min=0.0,
+        max=5.0,
+        update=update_reflector_material_properties
+    )
+
+    show_roughness_remap: bpy.props.BoolProperty(
+        name="Show Roughness Remap",
+        description="Show/hide roughness remapping controls",
+        default=False
+    )
+
+    show_texture_roughness_remap: bpy.props.BoolProperty(
+        name="Show Texture Roughness Remap",
+        description="Show/hide texture roughness remapping controls",
+        default=False
+    )
+
+    visible_in_reflections: bpy.props.BoolProperty(
+        name="Visible in Reflections",
+        description="This object will be visible in reflections",
+        default=False,
+        update=update_reflection_visibility
+    )
+
+    reflection_holdout: bpy.props.BoolProperty(
+        name="Reflection Holdout",
+        description="Object blocks reflections but doesn't appear in them (occlusion only)",
+        default=False,
+        update=update_reflection_holdout
+    )
+
+
+class CompifyFootageConfig(bpy.types.PropertyGroup):
+    footage: bpy.props.PointerProperty(
+        type=bpy.types.Image,
+        name="Footage Texture",
+        update=change_footage_material_clip,
+    )
+    camera: bpy.props.PointerProperty(
+        type=bpy.types.Object,
+        name="Footage Camera",
+        poll=lambda scene, obj : obj.type == 'CAMERA',
+        update=change_footage_camera,
+    )
+    geo_collection: bpy.props.PointerProperty(
+        type=bpy.types.Collection,
+        name="Footage Geo Collection",
+    )
+    lights_collection: bpy.props.PointerProperty(
+        type=bpy.types.Collection,
+        name="Footage Lights Collection",
+    )
+    reflectors_collection: bpy.props.PointerProperty(
+        type=bpy.types.Collection,
+        name="Reflective Geo Collection",
+        description="Collection containing objects that act as reflective surfaces"
+    )
+    reflectees_collection: bpy.props.PointerProperty(
+        type=bpy.types.Collection,
+        name="Reflected Geo Collection",
+        description="Collection containing objects that should be visible in reflections"
+    )
+    holdout_collection: bpy.props.PointerProperty(
+        type=bpy.types.Collection,
+        name="Holdout Geo Collection",
+        description="Collection containing objects that block reflections but don't appear in them"
+    )
+
+    # Global reflection quality settings
+    reflection_roughness: bpy.props.FloatProperty(
+        name="Reflection Roughness",
+        description="Global roughness for all reflections (0=mirror, 1=very blurry)",
+        default=0.1,
+        min=0.0,
+        max=1.0
+    )
+    reflection_strength: bpy.props.FloatProperty(
+        name="Reflection Strength",
+        description="Global strength for all reflections",
+        default=0.3,
+        min=0.0,
+        max=1.0
+    )
+    reflection_blend_mode: bpy.props.EnumProperty(
+        name="Blend Mode",
+        description="How reflections are blended with the base material",
+        items=[
+            ('ADD', "Add", "Add reflections on top (brighter)"),
+            ('MIX', "Mix", "Mix reflections with base (more realistic)")
+        ],
+        default='ADD'
+    )
+
+    bake_uv_margin: bpy.props.IntProperty(
+        name="Bake UV Margin",
+        subtype='PIXEL',
+        options=set(), # Not animatable.
+        default=4,
+        min=0,
+        max=2**16,
+        soft_max=32,
+    )
+    bake_image_res: bpy.props.IntProperty(
+        name="Bake Resolution",
+        subtype='PIXEL',
+        options=set(), # Not animatable.
+        default=1024,
+        min=64,
+        max=2**16,
+        soft_max=8192,
+    )
+
+    # UI Collapse states
+    show_footage_section: bpy.props.BoolProperty(
+        name="Show Footage Section",
+        default=True,
+        description="Toggle footage section visibility"
+    )
+    show_collections_section: bpy.props.BoolProperty(
+        name="Show Collections Section",
+        default=True,
+        description="Toggle collections section visibility"
+    )
+    show_reflections_section: bpy.props.BoolProperty(
+        name="Show Reflections Section",
+        default=False,
+        description="Toggle reflections section visibility"
+    )
+    show_baking_section: bpy.props.BoolProperty(
+        name="Show Baking Section",
+        default=False,
+        description="Toggle baking settings section visibility"
+    )
+
+
+class CompifyPanel(bpy.types.Panel):
+    """Composite in 3D space."""
+    bl_label = "Compify"
+    bl_idname = "DATA_PT_compify"
+    bl_space_type = 'PROPERTIES'
+    bl_region_type = 'WINDOW'
+    bl_context = "scene"
+
+    @classmethod
+    def poll(cls, context):
+        return True
+
+    def draw(self, context):
+        wm = context.window_manager
+        layout = self.layout
+
+        # Safety check for compify_config
+        if not hasattr(context.scene, 'compify_config'):
+            layout.label(text="Compify not properly initialized. Please restart Blender.")
+            return
+
+        config = context.scene.compify_config
+
+        #-------- FOOTAGE SECTION (Collapsible) --------
+        box = layout.box()
+        row = box.row()
+        row.prop(config, "show_footage_section",
+                icon='TRIA_DOWN' if config.show_footage_section else 'TRIA_RIGHT',
+                icon_only=True, emboss=False)
+        row.label(text="Footage", icon='IMAGE_DATA')
+
+        if config.show_footage_section:
+            col = box.column()
+            col.template_ID(config, "footage", open="image.open")
+            col.use_property_split = True
+            if config.footage != None:
+                col.prop(config.footage, "source")
+                col.prop(config.footage.colorspace_settings, "name", text="Color Space")
+
+            # Camera selection
+            col.prop(config, "camera", text="Camera")
+
+        #-------- COLLECTIONS SECTION (Collapsible) --------
+        box = layout.box()
+        row = box.row()
+        row.prop(config, "show_collections_section",
+                icon='TRIA_DOWN' if config.show_collections_section else 'TRIA_RIGHT',
+                icon_only=True, emboss=False)
+        row.label(text="Collections", icon='OUTLINER_COLLECTION')
+
+        # Check if active object has a compify material and show reset button if so
+        if context.active_object and context.active_object.type == 'MESH':
+            has_compify_mat = False
+            if context.active_object.data.materials:
+                for mat in context.active_object.data.materials:
+                    if mat and (mat.name == compify_mat_name(context) or "_Reflector_" in mat.name):
+                        has_compify_mat = True
+                        break
+
+            if has_compify_mat:
+                row.operator("material.compify_reset_material", text="", icon='FILE_REFRESH')
+
+        if config.show_collections_section:
+            col = box.column()
+            col.use_property_split = True
+
+            # Footage Geo Collection
+            row1 = col.row()
+            row1.prop(config, "geo_collection", text="Footage Geo")
+            row1.operator("scene.compify_add_footage_geo_collection", text="", icon='ADD')
+
+            # Footage Lights Collection
+            row2 = col.row()
+            row2.prop(config, "lights_collection", text="Footage Lights")
+            row2.operator("scene.compify_add_footage_lights_collection", text="", icon='ADD')
+
+        #-------- REFLECTIONS SECTION (Collapsible) --------
+        box = layout.box()
+        row = box.row()
+        row.prop(config, "show_reflections_section",
+                icon='TRIA_DOWN' if config.show_reflections_section else 'TRIA_RIGHT',
+                icon_only=True, emboss=False)
+        row.label(text="Reflections", icon='SHADING_RENDERED')
+
+        if config.show_reflections_section:
+            col = box.column()
+            col.use_property_split = True
+
+            # Reflective Geo Collection
+            row3 = col.row()
+            row3.prop(config, "reflectors_collection", text="Reflective Geo")
+            row3.operator("scene.compify_add_reflectors_collection", text="", icon='ADD')
+
+            # Reflected Geo Collection
+            row4 = col.row()
+            row4.prop(config, "reflectees_collection", text="Reflected Geo")
+            row4.operator("scene.compify_add_reflectees_collection", text="", icon='ADD')
+
+            # Holdout Geo Collection
+            row5 = col.row()
+            row5.prop(config, "holdout_collection", text="Holdout Geo")
+            row5.operator("scene.compify_add_holdout_collection", text="", icon='ADD')
+
+
+            # Per-Object Settings (if object selected)
+            if context.active_object:
+                obj = context.active_object
+                col.separator()
+                col.label(text=f"Selected Object: {obj.name}", icon='OBJECT_DATA')
+
+                # Reflector settings for mesh objects
+                if obj.type == 'MESH':
+                    sub_box = col.box()
+
+                    # Check if object has reflector material
+                    has_reflector_mat = False
+                    reflector_mat = None
+                    if obj.data.materials:
+                        for mat in obj.data.materials:
+                            if mat and "_Reflector_" in mat.name:
+                                has_reflector_mat = True
+                                reflector_mat = mat
+                                break
+
+                    if not has_reflector_mat:
+                        # No reflector material - show button to create one
+                        is_in_reflectors = False
+                        if config.reflectors_collection:
+                            for collection_obj in config.reflectors_collection.objects:
+                                if collection_obj == obj:
+                                    is_in_reflectors = True
+                                    break
+
+                        if is_in_reflectors:
+                            sub_box.label(text="In Reflective Geo collection", icon='CHECKMARK')
+
+                        sub_box.operator("scene.compify_make_reflective", text="Make This Object Reflective", icon='SHADING_RENDERED')
+                    else:
+                        # HAS reflector material - show THIS OBJECT'S settings
+                        sub_box.label(text="✓ Object is Reflective", icon='CHECKMARK')
+                        sub_box.separator()
+
+                        # Strength control
+                        sub_box.prop(obj.compify_reflection, "reflection_strength", text="Strength", slider=True)
+
+                        # Roughness source selector
+                        sub_box.prop(obj.compify_reflection, "roughness_source", text="Roughness")
+
+                        # Show appropriate roughness control based on source
+                        if obj.compify_reflection.roughness_source == 'VALUE':
+                            sub_box.prop(obj.compify_reflection, "reflection_roughness", text="Roughness Value", slider=True)
+                        elif obj.compify_reflection.roughness_source == 'TEXTURE':
+                            sub_box.template_ID(obj.compify_reflection, "roughness_texture", open="image.open")
+
+                            # Add ColorRamp section for texture roughness
+                            remap_box = sub_box.box()
+                            remap_row = remap_box.row()
+                            remap_row.prop(obj.compify_reflection, "show_texture_roughness_remap",
+                                          icon='TRIA_DOWN' if obj.compify_reflection.show_texture_roughness_remap else 'TRIA_RIGHT',
+                                          icon_only=True, emboss=False)
+                            remap_row.label(text="Texture Roughness Remap", icon='FCURVE')
+
+                            if obj.compify_reflection.show_texture_roughness_remap:
+                                # Find the ColorRamp node if it exists
+                                ramp_node = None
+                                if reflector_mat and reflector_mat.node_tree:
+                                    for node in reflector_mat.node_tree.nodes:
+                                        if node.name == "Compify_Texture_Roughness_Remap" and node.type == 'VALTORGB':
+                                            ramp_node = node
+                                            break
+
+                                if ramp_node:
+                                    # Show the actual ColorRamp widget
+                                    remap_box.template_color_ramp(ramp_node, "color_ramp", expand=True)
+                                else:
+                                    remap_box.label(text="Apply changes to create remap", icon='INFO')
+
+                                # Quick presets
+                                remap_box.separator()
+                                preset_row = remap_box.row(align=True)
+                                preset_row.label(text="Presets:")
+                                preset_row.operator("scene.compify_texture_roughness_remap_preset", text="Linear").preset = 'LINEAR'
+                                preset_row.operator("scene.compify_texture_roughness_remap_preset", text="Invert").preset = 'INVERT'
+                                preset_row.operator("scene.compify_texture_roughness_remap_preset", text="Contrast").preset = 'CONTRAST'
+
+                        elif obj.compify_reflection.roughness_source == 'COMPIFY':
+                            # Using Compify footage - show collapsible ColorRamp section
+                            remap_box = sub_box.box()
+                            remap_row = remap_box.row()
+                            remap_row.prop(obj.compify_reflection, "show_roughness_remap",
+                                          icon='TRIA_DOWN' if obj.compify_reflection.show_roughness_remap else 'TRIA_RIGHT',
+                                          icon_only=True, emboss=False)
+                            remap_row.label(text="Roughness Remap", icon='FCURVE')
+
+                            if obj.compify_reflection.show_roughness_remap:
+                                # Find the ColorRamp node if it exists
+                                ramp_node = None
+                                if reflector_mat and reflector_mat.node_tree:
+                                    for node in reflector_mat.node_tree.nodes:
+                                        if node.name == "Compify_Roughness_Remap" and node.type == 'VALTORGB':
+                                            ramp_node = node
+                                            break
+
+                                if ramp_node:
+                                    # Show the actual ColorRamp widget
+                                    remap_box.template_color_ramp(ramp_node, "color_ramp", expand=True)
+                                else:
+                                    remap_box.label(text="Apply changes to create remap", icon='INFO')
+
+                                # Quick presets
+                                remap_box.separator()
+                                preset_row = remap_box.row(align=True)
+                                preset_row.label(text="Presets:")
+                                preset_row.operator("scene.compify_roughness_remap_preset", text="Linear").preset = 'LINEAR'
+                                preset_row.operator("scene.compify_roughness_remap_preset", text="Invert").preset = 'INVERT'
+                                preset_row.operator("scene.compify_roughness_remap_preset", text="Contrast").preset = 'CONTRAST'
+
+                        sub_box.separator()
+                        # Button to apply these settings to the material
+                        row = sub_box.row()
+                        row.scale_y = 1.2
+                        row.operator("scene.compify_force_update_reflector", text="Apply Changes", icon='FILE_REFRESH')
+
+                # Reflect Object button and Holdout controls (works for all object types)
+                col.separator()
+                reflect_box = col.box()
+
+                # Check if object is in reflectees collection
+                is_in_reflectees = False
+                if config.reflectees_collection:
+                    for collection_obj in config.reflectees_collection.objects:
+                        if collection_obj == obj:
+                            is_in_reflectees = True
+                            break
+
+                # Check if object is holdout
+                if hasattr(obj, 'compify_reflection') and obj.compify_reflection.reflection_holdout:
+                    reflect_box.label(text="✓ Object is a Reflection Holdout", icon='HOLDOUT_ON')
+                    reflect_box.label(text="(Blocks reflections but invisible)", icon='INFO')
+
+                    # Option to remove holdout
+                    row = reflect_box.row()
+                    row.operator("scene.compify_remove_holdout",
+                                text="Remove Holdout",
+                                icon='X')
+                elif is_in_reflectees:
+                    reflect_box.label(text="✓ Object is in Reflected Geo collection", icon='CHECKMARK')
+                else:
+                    # Show options for making object visible or holdout
+                    col_options = reflect_box.column(align=True)
+                    col_options.operator("scene.compify_make_object_reflect",
+                                        text="Make Object Visible in Reflections",
+                                        icon='HIDE_OFF')
+
+                    # Show holdout button for mesh objects
+                    if obj.type == 'MESH':
+                        col_options.operator("scene.compify_make_holdout",
+                                            text="Make Reflection Holdout",
+                                            icon='HOLDOUT_OFF')
+            else:
+                col.separator()
+                col.label(text="Select an object to configure reflections", icon='INFO')
+
+        #-------- BAKING SETTINGS SECTION (Collapsible) --------
+        box = layout.box()
+        row = box.row()
+        row.prop(config, "show_baking_section",
+                icon='TRIA_DOWN' if config.show_baking_section else 'TRIA_RIGHT',
+                icon_only=True, emboss=False)
+        row.label(text="Baking Settings", icon='RENDER_STILL')
+
+        if config.show_baking_section:
+            col = box.column()
+            col.use_property_split = True
+            col.prop(config, "bake_uv_margin")
+            col.prop(config, "bake_image_res")
+
+        #-------- MAIN ACTION BUTTONS (Always visible at bottom) --------
+        layout.separator(factor=1.0)
+
+        col = layout.column(align=True)
+        col.scale_y = 1.3
+        col.operator("material.compify_prep_scene", icon='SCENE_DATA')
+        col.operator("material.compify_bake", icon='RENDER_STILL')
+        col.operator("render.compify_render", icon='RENDER_ANIMATION')
+
+
+class CompifyCameraPanel(bpy.types.Panel):
+    """Configure cameras for 3D compositing."""
+    bl_label = "Compify"
+    bl_idname = "DATA_PT_compify_camera"
+    bl_space_type = 'PROPERTIES'
+    bl_region_type = 'WINDOW'
+    bl_context = "data"
+
+    @classmethod
+    def poll(cls, context):
+        return context.active_object.type == 'CAMERA'
+
+    def draw(self, context):
+        wm = context.window_manager
+        layout = self.layout
+
+        col = layout.column()
+        col.operator("material.compify_camera_project_new")
+
+
+class CompifyResetMaterial(bpy.types.Operator):
+    """Reset the Compify material on the selected object"""
+    bl_idname = "material.compify_reset_material"
+    bl_label = "Reset Material"
+    bl_options = {'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        if not context.active_object or context.active_object.type != 'MESH':
+            return False
+
+        # Check if object has a compify-related material
+        if context.active_object.data.materials:
+            for mat in context.active_object.data.materials:
+                if mat and (mat.name == compify_mat_name(context) or "_Reflector_" in mat.name):
+                    return True
+        return False
+
+    def invoke(self, context, event):
+        # Show confirmation dialog
+        return context.window_manager.invoke_confirm(self, event)
+
+    def draw(self, context):
+        layout = self.layout
+        obj = context.active_object
+
+        col = layout.column()
+        col.label(text=f"Are you sure you want to reset the material on '{obj.name}'?", icon='ERROR')
+        col.label(text="This will remove all Compify materials from this object.")
+        col.separator()
+        col.label(text="This action cannot be undone.", icon='INFO')
+
+    def execute(self, context):
+        obj = context.active_object
+
+        # Track which materials to remove
+        materials_to_remove = []
+
+        # Check current materials
+        if obj.data.materials:
+            for mat in obj.data.materials:
+                if mat:
+                    if "_Reflector_" in mat.name or mat.name == compify_mat_name(context):
+                        materials_to_remove.append(mat)
+
+        # Clear ALL materials from object
+        obj.data.materials.clear()
+
+        # Delete the actual material data blocks
+        for mat in materials_to_remove:
+            if mat.users == 0:  # Only delete if no other users
+                mat_name = mat.name  # Store name before deleting
+                bpy.data.materials.remove(mat)
+                print(f"Deleted material: {mat_name}")
+
+        self.report({'INFO'}, f"Cleared all Compify materials from {obj.name}")
+
+        return {'FINISHED'}
 
 
 class CompifyPrepScene(bpy.types.Operator):
@@ -278,34 +1686,116 @@ class CompifyPrepScene(bpy.types.Operator):
     def execute(self, context):
         proxy_collection = context.scene.compify_config.geo_collection
         lights_collection = context.scene.compify_config.lights_collection
-        material = ensure_compify_material(context)
+        reflectors_collection = context.scene.compify_config.reflectors_collection
+        holdout_collection = context.scene.compify_config.holdout_collection
+
+        try:
+            material = ensure_compify_material(context)
+        except Exception as e:
+            self.report({'ERROR'}, f"Failed to create material: {str(e)}")
+            return {'CANCELLED'}
+
+        # Process ONLY proxy objects for base material application
+        proxy_objects = list(proxy_collection.all_objects)
+
+        # Process reflectors separately - they need special handling
+        reflector_objects = []
+        if reflectors_collection:
+            reflector_objects = [obj for obj in reflectors_collection.all_objects if obj.type == 'MESH']
+
+        # Track holdout objects separately - DON'T apply base material to them
+        holdout_objects = []
+        holdout_materials_to_preserve = {}
+        if holdout_collection:
+            holdout_objects = [obj for obj in holdout_collection.all_objects if obj.type == 'MESH']
+            # Store their holdout materials to preserve them
+            for obj in holdout_objects:
+                if obj.data.materials:
+                    for mat in obj.data.materials:
+                        if mat and "Compify_Reflection_Holdout" in mat.name:
+                            holdout_materials_to_preserve[obj.name] = mat
+
+        # Combine for UV processing but keep track of which is which
+        all_geo_objects = proxy_objects + reflector_objects + holdout_objects
+
+        if len(all_geo_objects) == 0:
+            self.report({'ERROR'}, "No geometry objects found for processing")
+            return {'CANCELLED'}
 
         # Deselect all objects.
         for obj in context.scene.objects:
             obj.select_set(False)
 
-        # Set up proxy objects.
-        for obj in proxy_collection.all_objects:
+        # Apply scale to all geometry objects
+        for obj in all_geo_objects:
             if obj.type == 'MESH':
-                # Select it.
+                obj.select_set(True)
+                context.view_layer.objects.active = obj
+                bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+                obj.select_set(False)
+
+        # Set up proxy objects with base Compify material (but NOT reflectors or holdouts!)
+        for obj in proxy_objects:
+            if obj.type == 'MESH' and obj not in reflector_objects and obj not in holdout_objects:
                 obj.select_set(True)
                 context.view_layer.objects.active = obj
 
-                # Ensure it has a compify UV layer and that
-                # it's selected.
+                # Ensure it has a compify UV layer
                 if UV_LAYER_NAME not in obj.data.uv_layers:
                     obj.data.uv_layers.new(name=UV_LAYER_NAME)
                 obj.data.uv_layers.active = obj.data.uv_layers[UV_LAYER_NAME]
 
-                # Set it up with the footage material.
-                obj.data.materials.clear()
-                obj.data.materials.append(material)
+                # Check if this object already has a reflector or holdout material
+                has_special_material = False
+                if obj.data.materials:
+                    for mat in obj.data.materials:
+                        if mat and ("_Reflector_" in mat.name or "Compify_Reflection_Holdout" in mat.name):
+                            has_special_material = True
+                            break
 
-        # UV unwrap the proxy objects.
+                # Only apply base material if it doesn't have a special material
+                if not has_special_material:
+                    obj.data.materials.clear()
+                    obj.data.materials.append(material)
+                    print(f"Applied base material to {obj.name}")
+                else:
+                    print(f"Preserved special material on {obj.name}")
+
+        # Set up reflector objects with UV layers but preserve their materials
+        for obj in reflector_objects:
+            if obj not in holdout_objects:  # Don't process if it's also a holdout
+                obj.select_set(True)
+                context.view_layer.objects.active = obj
+
+                # Ensure it has a compify UV layer
+                if UV_LAYER_NAME not in obj.data.uv_layers:
+                    obj.data.uv_layers.new(name=UV_LAYER_NAME)
+                obj.data.uv_layers.active = obj.data.uv_layers[UV_LAYER_NAME]
+
+                # DON'T touch materials on reflectors - they'll be handled by setup_reflector_materials
+                print(f"Preserved materials on reflector {obj.name}")
+
+        # Set up holdout objects with UV layers and PRESERVE their holdout materials
+        for obj in holdout_objects:
+            obj.select_set(True)
+            context.view_layer.objects.active = obj
+
+            # Ensure it has a compify UV layer
+            if UV_LAYER_NAME not in obj.data.uv_layers:
+                obj.data.uv_layers.new(name=UV_LAYER_NAME)
+            obj.data.uv_layers.active = obj.data.uv_layers[UV_LAYER_NAME]
+
+            # Preserve holdout material if it had one
+            if obj.name in holdout_materials_to_preserve:
+                obj.data.materials.clear()
+                obj.data.materials.append(holdout_materials_to_preserve[obj.name])
+                print(f"Preserved holdout material on {obj.name}")
+
+        # UV unwrap all geometry objects
         bpy.ops.object.mode_set(mode='EDIT')
         bpy.ops.mesh.select_all(action='SELECT')
         bpy.ops.uv.smart_project(
-            angle_limit=(math.pi/180)*60, # 60 degrees
+            angle_limit=(math.pi/180)*60,
             island_margin=0.001,
             area_weight=0.0,
             correct_aspect=False,
@@ -313,21 +1803,46 @@ class CompifyPrepScene(bpy.types.Operator):
         )
         bpy.ops.object.mode_set(mode='OBJECT')
 
-        # We have to do the UV island margins twice, because Blender's
-        # `island_margin` is stupid beyond belief and corresponds to
-        # nothing absolute that we can depend on.  So what we're doing
-        # here is saying, "Hey, what was the actual margin achieved
-        # with `island_margin=0.001`?  Okay, now let's redo it based on
-        # that result."  It's still not 100% precise even with this,
-        # but with a bit of buffer it's close enough.
-        actual_margin = leftmost_u(context.selected_objects, UV_LAYER_NAME)
-        actual_margin_pixels = actual_margin * context.scene.compify_config.bake_image_res
-        target_margin_with_buffer = context.scene.compify_config.bake_uv_margin * (5.0 / 4.0)
-        correction_factor = target_margin_with_buffer / actual_margin_pixels
-        bpy.ops.object.mode_set(mode='EDIT')
-        bpy.ops.uv.select_all(action='SELECT') 
-        bpy.ops.uv.pack_islands(rotate=False, margin = 0.001 * correction_factor)
-        bpy.ops.object.mode_set(mode='OBJECT')
+        # UV island margin adjustment
+        try:
+            actual_margin = leftmost_u(context.selected_objects, UV_LAYER_NAME)
+            actual_margin_pixels = actual_margin * context.scene.compify_config.bake_image_res
+            target_margin_with_buffer = context.scene.compify_config.bake_uv_margin * (5.0 / 4.0)
+            correction_factor = target_margin_with_buffer / actual_margin_pixels
+            bpy.ops.object.mode_set(mode='EDIT')
+            bpy.ops.uv.select_all(action='SELECT')
+
+            try:
+                bpy.ops.uv.pack_islands(rotate=False, margin=0.001 * correction_factor)
+            except TypeError:
+                try:
+                    bpy.ops.uv.pack_islands(margin=0.001 * correction_factor)
+                except:
+                    self.report({'WARNING'}, "Could not properly set UV island margins")
+
+            bpy.ops.object.mode_set(mode='OBJECT')
+        except Exception as e:
+            self.report({'WARNING'}, f"UV adjustment error: {str(e)}")
+            bpy.ops.object.mode_set(mode='OBJECT')
+
+        # NOW set up reflections - this creates special materials for reflectors
+        try:
+            setup_reflection_visibility(context)
+            setup_reflector_materials(context)  # This creates and assigns reflector materials
+
+            # Re-apply holdout materials after reflection setup
+            for obj_name, mat in holdout_materials_to_preserve.items():
+                if obj_name in bpy.data.objects:
+                    obj = bpy.data.objects[obj_name]
+                    obj.data.materials.clear()
+                    obj.data.materials.append(mat)
+                    # Ensure holdout visibility settings
+                    obj.visible_glossy = True  # Must be true to block reflections
+                    print(f"Re-applied holdout material to {obj_name}")
+
+            self.report({'INFO'}, "Scene preparation completed")
+        except Exception as e:
+            self.report({'WARNING'}, f"Reflection setup warning: {str(e)}")
 
         return {'FINISHED'}
 
@@ -341,10 +1856,6 @@ class CompifyBake(bpy.types.Operator):
     _timer = None
     baker = None
 
-    # Note: we use a modal technique inspired by this to keep the baking
-    # from blocking the UI:
-    # https://blender.stackexchange.com/questions/71454/is-it-possible-to-make-a-sequence-of-renders-and-give-the-user-the-option-to-can
-
     @classmethod
     def poll(cls, context):
         return context.mode == 'OBJECT' \
@@ -355,13 +1866,15 @@ class CompifyBake(bpy.types.Operator):
             and compify_mat_name(context) in bpy.data.materials
 
     def post(self, scene, context=None):
-        self.baker.post(scene, context)
+        if hasattr(self, 'baker') and self.baker:
+            self.baker.post(scene, context)
 
     def cancelled(self, scene, context=None):
-        self.baker.cancelled(scene, context)
+        if hasattr(self, 'baker') and self.baker:
+            self.baker.cancelled(scene, context)
 
     def execute(self, context):
-        self.baker = Baker()
+        self.baker = BakerWithReflections()  # Use modified baker
         self._timer = context.window_manager.event_timer_add(0.05, window=context.window)
         context.window_manager.modal_handler_add(self)
         return self.baker.execute(context)
@@ -408,7 +1921,7 @@ class CompifyRender(bpy.types.Operator):
         self.render_done = False
         self.frame_range = (context.scene.frame_start, context.scene.frame_end)
         self.stage = "bake"
-        self.baker = Baker()
+        self.baker = BakerWithReflections()
 
         self.is_finished = False
         self.is_cancelled = False
@@ -471,7 +1984,6 @@ class CompifyRender(bpy.types.Operator):
 
         return {'PASS_THROUGH'}
 
-
 class CompifyAddFootageGeoCollection(bpy.types.Operator):
     """Creates and assigns a new empty collection for footage geometry"""
     bl_idname = "scene.compify_add_footage_geo_collection"
@@ -506,6 +2018,80 @@ class CompifyAddFootageLightsCollection(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class CompifyUpdateReflections(bpy.types.Operator):
+    """Update reflection settings for all objects in the scene"""
+    bl_idname = "scene.compify_update_reflections"
+    bl_label = "Update Reflections"
+    bl_options = {'UNDO'}
+
+    def execute(self, context):
+        setup_reflection_visibility(context)
+        setup_reflector_materials(context)
+        self.report({'INFO'}, "Reflections updated successfully")
+        return {'FINISHED'}
+
+
+class CompifyAddReflectorsCollection(bpy.types.Operator):
+    """Creates and assigns a new empty collection for reflective geometry"""
+    bl_idname = "scene.compify_add_reflectors_collection"
+    bl_label = "Add Reflective Geo Collection"
+    bl_options = {'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        return context.scene.compify_config.reflectors_collection == None
+
+    def execute(self, context):
+        collection = bpy.data.collections.new("Reflective Geo")
+
+        # Add to the footage geo collection as a child if it exists
+        geo_collection = context.scene.compify_config.geo_collection
+        if geo_collection:
+            geo_collection.children.link(collection)
+            self.report({'INFO'}, "Created Reflective Geo collection inside Footage Geo collection")
+        else:
+            # If no footage geo collection, add to scene root
+            context.scene.collection.children.link(collection)
+            self.report({'WARNING'}, "Created Reflective Geo collection in scene root - create Footage Geo collection first")
+
+        context.scene.compify_config.reflectors_collection = collection
+        return {'FINISHED'}
+
+
+class CompifyAddReflecteesCollection(bpy.types.Operator):
+    """Creates and assigns a new empty collection for reflected geometry"""
+    bl_idname = "scene.compify_add_reflectees_collection"
+    bl_label = "Add Reflected Geo Collection"
+    bl_options = {'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        return context.scene.compify_config.reflectees_collection == None
+
+    def execute(self, context):
+        collection = bpy.data.collections.new("Reflected Geo")
+        context.scene.collection.children.link(collection)
+        context.scene.compify_config.reflectees_collection = collection
+        return {'FINISHED'}
+
+
+class CompifyAddHoldoutCollection(bpy.types.Operator):
+    """Creates and assigns a new collection for holdout geometry"""
+    bl_idname = "scene.compify_add_holdout_collection"
+    bl_label = "Add Holdout Geo Collection"
+    bl_options = {'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        return context.scene.compify_config.holdout_collection == None
+
+    def execute(self, context):
+        collection = bpy.data.collections.new("Holdout Geo")
+        context.scene.collection.children.link(collection)
+        context.scene.compify_config.holdout_collection = collection
+        return {'FINISHED'}
+
+
 class CompifyCameraProjectGroupNew(bpy.types.Operator):
     """Creates a new camera projection node group from the current selected camera"""
     bl_idname = "material.compify_camera_project_new"
@@ -526,86 +2112,443 @@ class CompifyCameraProjectGroupNew(bpy.types.Operator):
         return {'FINISHED'}
 
 
-#========================================================
+# Reflection-specific operators
+
+class CompifyMakeReflective(bpy.types.Operator):
+    """Make selected object reflective with current global settings"""
+    bl_idname = "scene.compify_make_reflective"
+    bl_label = "Make Object Reflective"
+    bl_options = {'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        return context.active_object and context.active_object.type == 'MESH' \
+            and context.scene.compify_config.reflectors_collection != None
+
+    def execute(self, context):
+        obj = context.active_object
+        scene = context.scene
+        config = scene.compify_config
+
+        # Step 1: MOVE object to Reflective Geo collection (remove from others first)
+        for coll in obj.users_collection:
+            coll.objects.unlink(obj)
+
+        # Add to Reflective Geo collection
+        config.reflectors_collection.objects.link(obj)
+
+        # Step 2: Get or create base material
+        base_material = ensure_compify_material(context)
+
+        # Step 3: Create and apply reflector material
+        reflector_material_name = f"{base_material.name}_Reflector_{obj.name}"
+
+        # Remove old if exists
+        if reflector_material_name in bpy.data.materials:
+            old_mat = bpy.data.materials[reflector_material_name]
+            bpy.data.materials.remove(old_mat)
+
+        # Create new
+        reflector_material = base_material.copy()
+        reflector_material.name = reflector_material_name
+
+        # Apply to object
+        obj.data.materials.clear()
+        obj.data.materials.append(reflector_material)
+
+        # Step 4: Apply reflection with default settings
+        modify_compify_material_for_reflection(
+            reflector_material,
+            0.0,  # metallic
+            0.1,  # default roughness
+            0.5,  # default strength
+            'ADD'
+        )
+
+        # Step 5: Make visible
+        obj.visible_camera = True
+        obj.visible_diffuse = True
+        obj.visible_glossy = True
+
+        self.report({'INFO'}, f"{obj.name} moved to Reflective Geo collection and made reflective")
+        return {'FINISHED'}
 
 
-class CompifyFootageConfig(bpy.types.PropertyGroup):
-    footage: bpy.props.PointerProperty(
-        type=bpy.types.Image,
-        name="Footage Texture",
-        update=change_footage_material_clip,
-    )
-    camera: bpy.props.PointerProperty(
-        type=bpy.types.Object,
-        name="Footage Camera",
-        poll=lambda scene, obj : obj.type == 'CAMERA',
-        update=change_footage_camera,
-    )
-    geo_collection: bpy.props.PointerProperty(
-        type=bpy.types.Collection,
-        name="Footage Geo Collection",
-    )
-    lights_collection: bpy.props.PointerProperty(
-        type=bpy.types.Collection,
-        name="Footage Lights Collection",
-    )
-    bake_uv_margin: bpy.props.IntProperty(
-        name="Bake UV Margin",
-        subtype='PIXEL',
-        options=set(), # Not animatable.
-        default=4,
-        min=0,
-        max=2**16,
-        soft_max=32,
-    )
-    bake_image_res: bpy.props.IntProperty(
-        name="Bake Resolution",
-        subtype='PIXEL',
-        options=set(), # Not animatable.
-        default=1024,
-        min=64,
-        max=2**16,
-        soft_max=8192,
-    )
+class CompifyMakeObjectReflect(bpy.types.Operator):
+    """Add selected object to the Objects to Reflect collection"""
+    bl_idname = "scene.compify_make_object_reflect"
+    bl_label = "Make Object Reflect"
+    bl_options = {'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        return context.active_object \
+            and context.scene.compify_config.reflectees_collection != None
+
+    def execute(self, context):
+        obj = context.active_object
+        config = context.scene.compify_config
+
+        # Check if already in reflectees collection
+        if obj in config.reflectees_collection.objects[:]:
+            self.report({'INFO'}, f"{obj.name} already in Reflected Geo collection")
+            return {'FINISHED'}
+
+        # Remove from all collections first
+        for coll in obj.users_collection:
+            coll.objects.unlink(obj)
+
+        # Add to reflectees collection
+        config.reflectees_collection.objects.link(obj)
+
+        # Make sure it's visible in reflections
+        obj.visible_glossy = True
+        if obj.type == 'LIGHT' and hasattr(obj.data, 'visible_glossy'):
+            obj.data.visible_glossy = True
+
+        self.report({'INFO'}, f"{obj.name} moved to Reflected Geo collection")
+        return {'FINISHED'}
 
 
-#========================================================
+class CompifyMakeHoldout(bpy.types.Operator):
+    """Make selected object a reflection holdout (INVISIBLE but blocks reflections)"""
+    bl_idname = "scene.compify_make_holdout"
+    bl_label = "Make Reflection Holdout"
+    bl_options = {'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        return context.active_object and context.active_object.type == 'MESH'
+
+    def execute(self, context):
+        original_obj = context.active_object
+
+        # Duplicate the object
+        obj = original_obj.copy()
+        obj.data = original_obj.data.copy()  #copy the mesh
+
+        # Rename the duplicate to include "holdout"
+        if "holdout" not in obj.name.lower():
+            obj.name = f"{original_obj.name}_holdout"
+
+        # Add the duplicate to the scene
+        context.collection.objects.link(obj)
+
+        # Enable holdout mode
+        obj.compify_reflection.reflection_holdout = True
+
+        # Apply the holdout material
+        apply_reflection_holdout_material(obj, context)
+
+        # Ensure scene settings are correct
+        setup_holdout_for_scene(context)
+
+        # Add to holdout collection if it exists, otherwise create it
+        if not context.scene.compify_config.holdout_collection:
+            # Create the holdout collection if it doesn't exist
+            collection = bpy.data.collections.new("Holdout Geo")
+            context.scene.collection.children.link(collection)
+            context.scene.compify_config.holdout_collection = collection
+            self.report({'INFO'}, "Created Holdout Geo collection")
+
+        # Remove from the temporary collection it was added to
+        context.collection.objects.unlink(obj)
+
+        # Add to holdout collection
+        context.scene.compify_config.holdout_collection.objects.link(obj)
+
+        # Make sure it's NOT in the reflectees collection
+        if context.scene.compify_config.reflectees_collection:
+            if obj in context.scene.compify_config.reflectees_collection.objects[:]:
+                context.scene.compify_config.reflectees_collection.objects.unlink(obj)
+
+        # Select the new holdout object
+        bpy.ops.object.select_all(action='DESELECT')
+        obj.select_set(True)
+        context.view_layer.objects.active = obj
+
+        self.report({'INFO'}, f"Created holdout duplicate: {obj.name}")
+        return {'FINISHED'}
+
+
+class CompifyRemoveHoldout(bpy.types.Operator):
+    """Remove holdout object (deletes the holdout duplicate)"""
+    bl_idname = "scene.compify_remove_holdout"
+    bl_label = "Remove Holdout"
+    bl_options = {'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        return context.active_object and context.active_object.type == 'MESH' \
+            and hasattr(context.active_object, 'compify_reflection') \
+            and context.active_object.compify_reflection.reflection_holdout
+
+    def execute(self, context):
+        obj = context.active_object
+
+        # Store the object name for the report
+        obj_name = obj.name
+
+        # Remove holdout material
+        remove_reflection_holdout_material(obj, context)
+
+        # Remove from holdout collection
+        if context.scene.compify_config.holdout_collection:
+            if obj in context.scene.compify_config.holdout_collection.objects[:]:
+                context.scene.compify_config.holdout_collection.objects.unlink(obj)
+
+        # Delete the holdout object entirely (since it's a duplicate)
+        mesh_data = obj.data
+        bpy.data.objects.remove(obj, do_unlink=True)
+
+        # Also remove the mesh data if it has no other users
+        if mesh_data.users == 0:
+            bpy.data.meshes.remove(mesh_data)
+
+        self.report({'INFO'}, f"Removed holdout object: {obj_name}")
+        return {'FINISHED'}
+
+
+class CompifyForceUpdateReflector(bpy.types.Operator):
+    """Force update reflector material with current settings"""
+    bl_idname = "scene.compify_force_update_reflector"
+    bl_label = "Force Update Reflector"
+    bl_options = {'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        if not context.active_object or context.active_object.type != 'MESH':
+            return False
+
+        # Check if has reflector material
+        obj = context.active_object
+        if obj.data.materials:
+            for mat in obj.data.materials:
+                if mat and "_Reflector_" in mat.name:
+                    return True
+        return False
+
+    def execute(self, context):
+        obj = context.active_object
+        scene = context.scene
+
+        # Find the reflector material
+        reflector_material = None
+        for mat in obj.data.materials:
+            if mat and "_Reflector_" in mat.name:
+                reflector_material = mat
+                break
+
+        if not reflector_material:
+            self.report({'ERROR'}, "No reflector material found")
+            return {'CANCELLED'}
+
+        # Get settings from the OBJECT'S properties
+        obj_strength = obj.compify_reflection.reflection_strength
+        obj_metallic = obj.compify_reflection.reflection_metallic
+        obj_roughness = obj.compify_reflection.reflection_roughness
+
+        # Pass the object reference so the function can access roughness source settings
+        modify_compify_material_for_reflection(
+            reflector_material,
+            obj_metallic,
+            obj_roughness,
+            obj_strength,
+            'ADD',
+            obj  # Pass the object so we can access its roughness settings
+        )
+
+        self.report({'INFO'}, f"Updated {obj.name} reflection settings")
+        return {'FINISHED'}
+
+
+class CompifyRoughnessRemapPreset(bpy.types.Operator):
+    """Apply a preset to the roughness remap"""
+    bl_idname = "scene.compify_roughness_remap_preset"
+    bl_label = "Roughness Remap Preset"
+    bl_options = {'UNDO'}
+
+    preset: bpy.props.StringProperty()
+
+    def execute(self, context):
+        obj = context.active_object
+
+        # Find the reflector material and ramp node
+        reflector_mat = None
+        if obj.data.materials:
+            for mat in obj.data.materials:
+                if mat and "_Reflector_" in mat.name:
+                    reflector_mat = mat
+                    break
+
+        if not reflector_mat or not reflector_mat.node_tree:
+            self.report({'ERROR'}, "No reflector material found")
+            return {'CANCELLED'}
+
+        ramp_node = None
+        for node in reflector_mat.node_tree.nodes:
+            if node.name == "Compify_Roughness_Remap" and node.type == 'VALTORGB':
+                ramp_node = node
+                break
+
+        if not ramp_node:
+            self.report({'ERROR'}, "No remap node found - apply changes first")
+            return {'CANCELLED'}
+
+        # Apply preset
+        if self.preset == 'LINEAR':
+            ramp_node.color_ramp.elements[0].position = 0.0
+            ramp_node.color_ramp.elements[0].color = (0.0, 0.0, 0.0, 1.0)
+            ramp_node.color_ramp.elements[1].position = 1.0
+            ramp_node.color_ramp.elements[1].color = (1.0, 1.0, 1.0, 1.0)
+        elif self.preset == 'INVERT':
+            ramp_node.color_ramp.elements[0].position = 0.0
+            ramp_node.color_ramp.elements[0].color = (1.0, 1.0, 1.0, 1.0)
+            ramp_node.color_ramp.elements[1].position = 1.0
+            ramp_node.color_ramp.elements[1].color = (0.0, 0.0, 0.0, 1.0)
+        elif self.preset == 'CONTRAST':
+            ramp_node.color_ramp.elements[0].position = 0.25
+            ramp_node.color_ramp.elements[0].color = (0.0, 0.0, 0.0, 1.0)
+            ramp_node.color_ramp.elements[1].position = 0.75
+            ramp_node.color_ramp.elements[1].color = (1.0, 1.0, 1.0, 1.0)
+
+        return {'FINISHED'}
+
+
+class CompifyTextureRoughnessRemapPreset(bpy.types.Operator):
+    """Apply a preset to the texture roughness remap"""
+    bl_idname = "scene.compify_texture_roughness_remap_preset"
+    bl_label = "Texture Roughness Remap Preset"
+    bl_options = {'UNDO'}
+
+    preset: bpy.props.StringProperty()
+
+    def execute(self, context):
+        obj = context.active_object
+
+        # Find the reflector material and ramp node
+        reflector_mat = None
+        if obj.data.materials:
+            for mat in obj.data.materials:
+                if mat and "_Reflector_" in mat.name:
+                    reflector_mat = mat
+                    break
+
+        if not reflector_mat or not reflector_mat.node_tree:
+            self.report({'ERROR'}, "No reflector material found")
+            return {'CANCELLED'}
+
+        ramp_node = None
+        for node in reflector_mat.node_tree.nodes:
+            if node.name == "Compify_Texture_Roughness_Remap" and node.type == 'VALTORGB':
+                ramp_node = node
+                break
+
+        if not ramp_node:
+            self.report({'ERROR'}, "No texture remap node found - apply changes first")
+            return {'CANCELLED'}
+
+        # Apply preset
+        if self.preset == 'LINEAR':
+            ramp_node.color_ramp.elements[0].position = 0.0
+            ramp_node.color_ramp.elements[0].color = (0.0, 0.0, 0.0, 1.0)
+            ramp_node.color_ramp.elements[1].position = 1.0
+            ramp_node.color_ramp.elements[1].color = (1.0, 1.0, 1.0, 1.0)
+        elif self.preset == 'INVERT':
+            ramp_node.color_ramp.elements[0].position = 0.0
+            ramp_node.color_ramp.elements[0].color = (1.0, 1.0, 1.0, 1.0)
+            ramp_node.color_ramp.elements[1].position = 1.0
+            ramp_node.color_ramp.elements[1].color = (0.0, 0.0, 0.0, 1.0)
+        elif self.preset == 'CONTRAST':
+            ramp_node.color_ramp.elements[0].position = 0.25
+            ramp_node.color_ramp.elements[0].color = (0.0, 0.0, 0.0, 1.0)
+            ramp_node.color_ramp.elements[1].position = 0.75
+            ramp_node.color_ramp.elements[1].color = (1.0, 1.0, 1.0, 1.0)
+
+        return {'FINISHED'}
 
 
 def register():
-    bpy.utils.register_class(CompifyPanel)
-    bpy.utils.register_class(CompifyCameraPanel)
+    # Register property groups first
+    bpy.utils.register_class(CompifyReflectionProperties)
+    bpy.utils.register_class(CompifyFootageConfig)
+
+    # Register ALL operators
     bpy.utils.register_class(CompifyAddFootageGeoCollection)
     bpy.utils.register_class(CompifyAddFootageLightsCollection)
+    bpy.utils.register_class(CompifyAddReflectorsCollection)
+    bpy.utils.register_class(CompifyAddReflecteesCollection)
+    bpy.utils.register_class(CompifyAddHoldoutCollection)
+    bpy.utils.register_class(CompifyMakeReflective)
+    bpy.utils.register_class(CompifyMakeObjectReflect)
+    bpy.utils.register_class(CompifyMakeHoldout)
+    bpy.utils.register_class(CompifyRemoveHoldout)
+    bpy.utils.register_class(CompifyForceUpdateReflector)
+    bpy.utils.register_class(CompifyUpdateReflections)
+    bpy.utils.register_class(CompifyResetMaterial)
     bpy.utils.register_class(CompifyPrepScene)
     bpy.utils.register_class(CompifyBake)
     bpy.utils.register_class(CompifyRender)
     bpy.utils.register_class(CompifyCameraProjectGroupNew)
-    bpy.utils.register_class(CompifyFootageConfig)
+    bpy.utils.register_class(CompifyRoughnessRemapPreset)
+    bpy.utils.register_class(CompifyTextureRoughnessRemapPreset)
 
-    # Custom properties.
+    # Register panels (WITHOUT CompifyReflectionPanel)
+    bpy.utils.register_class(CompifyPanel)
+    bpy.utils.register_class(CompifyCameraPanel)
+
+    # Custom properties
     bpy.types.Scene.compify_config = bpy.props.PointerProperty(type=CompifyFootageConfig)
+    bpy.types.Object.compify_reflection = bpy.props.PointerProperty(type=CompifyReflectionProperties)
 
-    # Other modules.
+    # Other modules
     camera_align_register()
+    register_preferences()
+
 
 def unregister():
+    # Remove custom properties first
+    if hasattr(bpy.types.Scene, 'compify_config'):
+        del bpy.types.Scene.compify_config
+    if hasattr(bpy.types.Object, 'compify_reflection'):
+        del bpy.types.Object.compify_reflection
+
+    # Other modules
+    camera_align_unregister()
+
+    # Unregister panels
     bpy.utils.unregister_class(CompifyPanel)
     bpy.utils.unregister_class(CompifyCameraPanel)
-    bpy.utils.unregister_class(CompifyAddFootageGeoCollection)
-    bpy.utils.unregister_class(CompifyAddFootageLightsCollection)
-    bpy.utils.unregister_class(CompifyPrepScene)
-    bpy.utils.unregister_class(CompifyBake)
-    bpy.utils.unregister_class(CompifyRender)
+
+    # Unregister ALL operators (reverse order)
+    bpy.utils.unregister_class(CompifyTextureRoughnessRemapPreset)
+    bpy.utils.unregister_class(CompifyRoughnessRemapPreset)
     bpy.utils.unregister_class(CompifyCameraProjectGroupNew)
+    bpy.utils.unregister_class(CompifyRender)
+    bpy.utils.unregister_class(CompifyBake)
+    bpy.utils.unregister_class(CompifyPrepScene)
+    bpy.utils.unregister_class(CompifyResetMaterial)
+    bpy.utils.unregister_class(CompifyUpdateReflections)
+    bpy.utils.unregister_class(CompifyForceUpdateReflector)
+    bpy.utils.unregister_class(CompifyRemoveHoldout)
+    bpy.utils.unregister_class(CompifyMakeHoldout)
+    bpy.utils.unregister_class(CompifyMakeObjectReflect)
+    bpy.utils.unregister_class(CompifyMakeReflective)
+    bpy.utils.unregister_class(CompifyAddHoldoutCollection)
+    bpy.utils.unregister_class(CompifyAddReflecteesCollection)
+    bpy.utils.unregister_class(CompifyAddReflectorsCollection)
+    bpy.utils.unregister_class(CompifyAddFootageLightsCollection)
+    bpy.utils.unregister_class(CompifyAddFootageGeoCollection)
+
+    # Unregister property groups last
+    bpy.utils.unregister_class(CompifyReflectionProperties)
     bpy.utils.unregister_class(CompifyFootageConfig)
 
-    # Custom properties.
-    del bpy.types.Scene.compify_config
-
-    # Other modules.
-    camera_align_unregister()
+    unregister_preferences()
 
 
 if __name__ == "__main__":
     register()
+
+
+#wuttup scrubs <3
