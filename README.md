@@ -29,9 +29,11 @@ The moderate expectation is that you have recreated your scene in some way for t
 This is a shot I took and recreated by tracking and then extruding with the wonderful default cube (lol)
 
 **Wireframe**
+
 <img width="796" height="454" alt="Screenshot_20250920_163603" src="https://github.com/user-attachments/assets/b2f9fd4b-1042-461c-b4bb-158d7ed1c02e" />
 
 **Solid View**
+
 <img width="798" height="451" alt="Screenshot_20250920_163809" src="https://github.com/user-attachments/assets/54186a4e-e5cf-4476-882a-57edfdb82a3d" />
 
 
@@ -54,6 +56,7 @@ This is a shot I took and recreated by tracking and then extruding with the wond
 <img width="438" height="87" alt="Screenshot_20250920_163151" src="https://github.com/user-attachments/assets/4e40f38d-01ff-4788-80e6-a41dbb9e2ca8" />
 
 **Rendered View**
+
 <img width="799" height="453" alt="Screenshot_20250920_164054" src="https://github.com/user-attachments/assets/d169156c-756b-42de-ab5f-f18b13a82507" />
 
 4. If you're scene has reflections, one second. I need to see what this looks like so far lol
