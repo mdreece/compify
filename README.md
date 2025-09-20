@@ -97,14 +97,15 @@ Access the Compify menu in the **Scene Properties** (or set a popup panel shortc
 
 - Use the '+' next to **Reflective Geo** to create the collection (will be in Footage Geo)
   - Add objects/geo that is going to be a reflective surface
+  - Select the object/geo for reflection strength options in the panel
 - Use the '+' next to **Reflected Geo** to create the collection
   - Add objects/geo that will be reflected on the above surfaces
 - Use the '+' next to **Holdout Geo** to create the collection
-  - Add objects/geo using the button for blocking reflections.
+  - Add objects/geo using the button for blocking reflections
     
 - Click **Prep Scene** → then **Bake Footage Lighting**
 
-<img width="797" height="452" alt="Screenshot_20250920_170325" src="https://github.com/user-attachments/assets/c6732ea8-91ea-401a-8437-f248f2dfb7fc" />
+<img width="796" height="450" alt="Screenshot_20250920_170944" src="https://github.com/user-attachments/assets/239f4ff8-a373-4ccd-b430-027af41b1849" />
 
 
 ---
