@@ -17,6 +17,7 @@ Want this addon to have *official support and updates*?
 [https://www.patreon.com/IanHubert](https://www.patreon.com/IanHubert)
 
  **Ian's Official Github for Compify:** 
+ 
 https://github.com/EatTheFuture/compify
 
 > *(I am doing this purely as a user and make no income from these changes/updates.)*
