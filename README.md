@@ -3,6 +3,8 @@
 **A Blender addon for easier/better compositing in 3D space.**  
 This addon was originally created by **Nathan Vegdahl** and **Ian Hubert**. Without their work, this unofficial version would not exist. **All credit to them.**
 
+**THERE ARE LIMITATIONS WITH THIS ADDON. MAIN KNOWN IS NO MIRRON REFLECTIONS ATM. THERE ARE OTHERS HERE AND THERE**
+
 ---
 
 <img width="383" height="213" src="https://github.com/user-attachments/assets/8fb013da-f923-4d66-9a96-b6798e73da52" alt="Main UI Preview" />
