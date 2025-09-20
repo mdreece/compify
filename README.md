@@ -24,6 +24,43 @@ Want this addon to have *official support and updates*?
 
 ---
 
+## How to Use 
+The moderate expectation is that you have recreated your scene in some way for the compify process to work with.
+This is a shot I took and recreated by tracking and then extruding with the wonderful default cube (lol)
+
+**Wireframe**
+<img width="796" height="454" alt="Screenshot_20250920_163603" src="https://github.com/user-attachments/assets/b2f9fd4b-1042-461c-b4bb-158d7ed1c02e" />
+
+**Solid View**
+<img width="798" height="451" alt="Screenshot_20250920_163809" src="https://github.com/user-attachments/assets/54186a4e-e5cf-4476-882a-57edfdb82a3d" />
+
+
+1. Access the Compify menu in the Scene Properties (or set a popup panel shortcut in preferences)
+<img width="482" height="269" alt="Screenshot_20250920_162306" src="https://github.com/user-attachments/assets/546e58e4-c5e5-4229-8e0c-5c3c326cfe2f" />
+
+2. In the Footage options:
+<img width="436" height="131" alt="Screenshot_20250920_162417" src="https://github.com/user-attachments/assets/05ebcd71-82bf-42aa-9069-0308ca8a198a" />
+ - Select your footage
+ - Select the color space
+ - Select your scene camera
+
+3. In the Collections options:
+<img width="436" height="131" alt="Screenshot_20250920_162417" src="https://github.com/user-attachments/assets/2a7b4302-78d6-4991-9ed1-809f0b780bf7" />
+ - Use the '+' next to Footage Geo to create the 'Footage Geo' collection.
+     - Add any objects/geometry that the footage will be projected onto into this collection.
+ - Use the '+' next to Footage Lights to create the 'Footage Lights' collection.
+     - Add any lights being recreated to this collection (HDRI/World is accounted for)
+ - Click 'Prep Scene' then 'Bake Footage Lighting'
+<img width="438" height="87" alt="Screenshot_20250920_163151" src="https://github.com/user-attachments/assets/4e40f38d-01ff-4788-80e6-a41dbb9e2ca8" />
+
+**Rendered View**
+<img width="799" height="453" alt="Screenshot_20250920_164054" src="https://github.com/user-attachments/assets/d169156c-756b-42de-ab5f-f18b13a82507" />
+
+4. If you're scene has reflections, one second. I need to see what this looks like so far lol
+
+
+
+
 ## Features Added in This Fork
 
 This fork expands the original Compify with additional quality-of-life features and new compositing tools:
