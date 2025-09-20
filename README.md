@@ -5,117 +5,163 @@ This addon was originally created by **Nathan Vegdahl** and **Ian Hubert**. With
 
 ---
 
-<img width="383" height="213" alt="Screenshot_20250920_155311" src="https://github.com/user-attachments/assets/8fb013da-f923-4d66-9a96-b6798e73da52" />
+<p align="center">
+  <img width="383" height="213" src="https://github.com/user-attachments/assets/8fb013da-f923-4d66-9a96-b6798e73da52" alt="Main UI Preview" />
+</p>
 
 ---
 
-## Support Ian Hubert  
+## 🙌 Support Ian Hubert
+
 Want this addon to have *official support and updates*?  
-🎉 **Subscribe to Ian’s Patreon:** [https://www.patreon.com/IanHubert](https://www.patreon.com/IanHubert)  
-*(I am doing this purely as a user and make no income from these changes/updates.)*
+🎉 **Subscribe to Ian’s Patreon:**  
+👉 [https://www.patreon.com/IanHubert](https://www.patreon.com/IanHubert)
 
-<img width="409" height="513" alt="Screenshot_20250920_160241" src="https://github.com/user-attachments/assets/eec98d54-c287-4f73-8473-025e0852036e" />
+> *(I am doing this purely as a user and make no income from these changes/updates.)*
 
----
-
-## Original Addon Description
-
-> This addon is currently beta quality. There may still be major bugs and rough edges, but in general it should basically work. Due to limitations in Blender's Python APIs, there are also some rough edges that are unfortunately impossible to fix at the moment.
+<p align="center">
+  <img width="409" height="513" src="https://github.com/user-attachments/assets/eec98d54-c287-4f73-8473-025e0852036e" alt="Support Ian Screenshot" />
+</p>
 
 ---
 
-## How to Use 
-The moderate expectation is that you have recreated your scene in some way for the compify process to work with.
-This is a shot I took and recreated by tracking and then extruding with the wonderful default cube (lol)
+## 📦 Original Addon Description
 
-**Wireframe**
+> This addon is currently beta quality. There may still be major bugs and rough edges, but in general it should basically work.  
+> Due to limitations in Blender's Python APIs, there are also some rough edges that are unfortunately impossible to fix at the moment.
 
-<img width="796" height="454" alt="Screenshot_20250920_163603" src="https://github.com/user-attachments/assets/b2f9fd4b-1042-461c-b4bb-158d7ed1c02e" />
+---
 
-**Solid View**
+## 🧪 How to Use
 
-<img width="798" height="451" alt="Screenshot_20250920_163809" src="https://github.com/user-attachments/assets/54186a4e-e5cf-4476-882a-57edfdb82a3d" />
+The moderate expectation is that you have recreated your scene in some way for the Compify process to work with.  
+This is a shot I took and recreated by tracking and then extruding with the wonderful default cube (lol).
 
+### Wireframe
+<p align="center">
+  <img width="796" height="454" src="https://github.com/user-attachments/assets/b2f9fd4b-1042-461c-b4bb-158d7ed1c02e" alt="Wireframe View" />
+</p>
 
-1. Access the Compify menu in the Scene Properties (or set a popup panel shortcut in preferences)
-<img width="482" height="269" alt="Screenshot_20250920_162306" src="https://github.com/user-attachments/assets/546e58e4-c5e5-4229-8e0c-5c3c326cfe2f" />
+### Solid View
+<p align="center">
+  <img width="798" height="451" src="https://github.com/user-attachments/assets/54186a4e-e5cf-4476-882a-57edfdb82a3d" alt="Solid View" />
+</p>
 
-2. In the Footage options:
-<img width="436" height="131" alt="Screenshot_20250920_162417" src="https://github.com/user-attachments/assets/05ebcd71-82bf-42aa-9069-0308ca8a198a" />
- - Select your footage
- - Select the color space
- - Select your scene camera
+---
 
-3. In the Collections options:
-<img width="436" height="131" alt="Screenshot_20250920_162417" src="https://github.com/user-attachments/assets/2a7b4302-78d6-4991-9ed1-809f0b780bf7" />
- - Use the '+' next to Footage Geo to create the 'Footage Geo' collection.
-     - Add any objects/geometry that the footage will be projected onto into this collection.
- - Use the '+' next to Footage Lights to create the 'Footage Lights' collection.
-     - Add any lights being recreated to this collection (HDRI/World is accounted for)
- - Click 'Prep Scene' then 'Bake Footage Lighting'
-<img width="438" height="87" alt="Screenshot_20250920_163151" src="https://github.com/user-attachments/assets/4e40f38d-01ff-4788-80e6-a41dbb9e2ca8" />
+### 1. Open Compify Panel
 
-**Rendered View**
+Access the Compify menu in the **Scene Properties** (or set a popup panel shortcut in preferences).
 
-<img width="799" height="453" alt="Screenshot_20250920_164054" src="https://github.com/user-attachments/assets/d169156c-756b-42de-ab5f-f18b13a82507" />
+<p align="center">
+  <img width="482" height="269" src="https://github.com/user-attachments/assets/546e58e4-c5e5-4229-8e0c-5c3c326cfe2f" alt="Compify Panel UI" />
+</p>
 
-4. If you're scene has reflections, one second. I need to see what this looks like so far lol
+---
 
+### 2. Footage Settings
 
+<p align="center">
+  <img width="436" height="131" src="https://github.com/user-attachments/assets/05ebcd71-82bf-42aa-9069-0308ca8a198a" alt="Footage Settings" />
+</p>
 
+- Select your **footage**
+- Choose **color space**
+- Set your **scene camera**
 
-## Features Added in This Fork
+---
 
-This fork expands the original Compify with additional quality-of-life features and new compositing tools:
+### 3. Collections Setup
+
+<p align="center">
+  <img width="436" height="131" src="https://github.com/user-attachments/assets/2a7b4302-78d6-4991-9ed1-809f0b780bf7" alt="Collections UI" />
+</p>
+
+- Use the `+` next to **Footage Geo** to create the collection.
+  - Add objects/geometry that the footage will be projected onto.
+- Use the `+` next to **Footage Lights** to create the collection.
+  - Add recreated lights here (HDRI/World is handled separately).
+- Click **Prep Scene** → then **Bake Footage Lighting**
+
+<p align="center">
+  <img width="438" height="87" src="https://github.com/user-attachments/assets/4e40f38d-01ff-4788-80e6-a41dbb9e2ca8" alt="Bake Lighting UI" />
+</p>
+
+---
+
+### 4. Rendered Result
+
+<p align="center">
+  <img width="799" height="453" src="https://github.com/user-attachments/assets/d169156c-756b-42de-ab5f-f18b13a82507" alt="Rendered View" />
+</p>
+
+> *If your scene has reflections, hold on—those are handled below!*
+
+---
+
+## ✨ Features Added in This Fork
+
+This fork expands the original Compify with **quality-of-life improvements** and **new compositing tools**.
+
+---
 
 ### 🔧 Preferences & Shortcuts
-- Customizable keyboard shortcuts to open the main panel without navigating the UI.
-- Preferences for managing updates:
-  - **Official GitHub** or this **forked build**
-  - Installing the official version will **remove this fork** from your system
+
+- Customizable keyboard shortcut to open the Compify panel
+- Auto-update support:
+  - Switch between the **official GitHub release** or this **forked build**
+  - Installing the official version will automatically **remove this fork**
+
+---
 
 ### 🪞 Reflections System
-Added tools for compositing reflections directly into your scenes:
+
+Tools for compositing **reflections** directly into your scenes.
 
 - **Reflective Geo**  
-  > Loads into the `Footage Geo` collection.  
-  Add geometry that *should be reflected* in the environment.
+  Loads into `Footage Geo` collection.  
+  → Add objects that *should be reflected* in the scene.
 
 - **Reflected Geo**  
-  > Loads as its own collection.  
-  Add geometry that *should reflect* the objects from above.
+  Loads as its own collection.  
+  → Add objects that *reflect* the ones above.
 
 - **Holdout Geo**  
-  > Blocks reflections inside the `Reflected Geo` objects.  
-  Great for occlusion control.
+  Blocks unwanted reflections inside `Reflected Geo` objects.  
+  → Perfect for occlusion and cleanup.
 
-All of the above have dedicated **UI buttons**.
+Each has dedicated **UI buttons**.
 
-You can control reflections with:
+Reflection controls include:
 - Noise
-- Texture
-- Compify material
+- Texture maps
+- Compify materials
 - Color ramp adjustments
-- Presets for quick setup
+- Presets for fast setup
 
 ---
 
-## Requirements
+## 🧰 Requirements
 
 - **Blender 4.0.0 or later**  
-  (Tested up to Blender **v5.0.0**)
+  (Tested with Blender **v5.0.0**)
 
 ---
 
-## License
+## 📄 License
 
-This addon is licensed under the **GNU General Public License v2.0**.  
+Licensed under the **GNU General Public License v2.0**  
 See [LICENSE.md](./LICENSE.md) for full details.
 
 ---
 
-## Contributing
+## 🤝 Contributing
 
-Although **Nathan** and **Ian** are not looking for direct contributions to the official version, I'm open to collaborating for sure!
+Although **Nathan** and **Ian** are not accepting contributions to the official version,  
+I'm very open to feedback and collaboration on this fork!
 
-I love this tool too much, and I find myself thinking of new features almost weekly. Feel free to reach out or open issues!!!
+> I love this tool and keep thinking of new features almost weekly.  
+> Feel free to [open issues](../../issues) or contact me!
+
+---
+
