@@ -361,7 +361,7 @@ class CompifyRecordShortcutOperator(bpy.types.Operator):
     """Record a keyboard shortcut by pressing keys"""
     bl_idname = "compify.record_shortcut"
     bl_label = "Record Shortcut"
-    bl_description = "Click and then press any key combination to set as shortcut"
+    bl_description = "Click then set. Use CTRL, ALT, SHIFT, etc.."
 
     deferred: BoolProperty(default=True)
 
@@ -994,7 +994,7 @@ def register_preferences():
         if prefs.enable_popup_panel and prefs.shortcut_key_internal:
             add_compify_keymap_from_prefs(prefs)
     except:
-        pass  # Preferences might not be available yet
+        pass
 
 
 def unregister_preferences():
