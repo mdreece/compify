@@ -84,6 +84,9 @@ Access the Compify menu in the **Scene Properties** (or set a popup panel shortc
 
 <img width="438" height="87" src="https://github.com/user-attachments/assets/4e40f38d-01ff-4788-80e6-a41dbb9e2ca8" alt="Bake Lighting UI" />
 
+
+<img width="797" height="455" alt="Screenshot_20250920_170604" src="https://github.com/user-attachments/assets/868f2cc2-9082-4ca5-9ebc-6f153fb62066" />
+
 ---
 
 ### If your scene does not have reflective surfaces, you are good to click on 'Render Animation with Compify Integration'. Be sure to set your output settings as you typically would. Otherwise, continue!
