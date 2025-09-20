@@ -16,13 +16,12 @@
 #
 #======================= END GPL LICENSE BLOCK ========================
 #
-#
-# COMPIFY WITH SELECTIVE REFLECTION SYSTEM
-# Updated to work with Blender 4.3+ and added selective object reflections
-# Improved UI with collapsible sections and material reset functionality
-# Network rendering support removed for simplicity
-# Fixed holdout persistence issues
-#
+# Updated to work with Blender 4.3+
+# UI has collapsible sections and material reset functionality
+# Popup panel with shortcut options
+# Update options for Official and Unofficial githubs
+# Reflections/reflective materials can now be set
+# Holdouts for reflections
 #
 #
 bl_info = {
