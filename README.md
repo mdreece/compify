@@ -1,6 +1,7 @@
 # Compify v0.1.5: Blender Addon
 A Blender addon for easier/better compositing in 3D space.
 This addon was created by Nathan Vegdahl and Ian Hubert. Without it's original basis, this unofficial version would be NOTHING. All credit to them.
+
 <img width="383" height="213" alt="Screenshot_20250920_155311" src="https://github.com/user-attachments/assets/8fb013da-f923-4d66-9a96-b6798e73da52" />
 
 Patreon: https://www.patreon.com/IanHubert
