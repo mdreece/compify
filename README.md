@@ -72,12 +72,13 @@ Access the Compify menu in the **Scene Properties** (or set a popup panel shortc
 
 ### 3. Collections Setup
 
-<img width="430" height="84" alt="Screenshot_20250920_165704" src="https://github.com/user-attachments/assets/a99d135d-e375-4317-bd50-935da6aecb29" />
+<img width="429" height="87" alt="Screenshot_20250920_171315" src="https://github.com/user-attachments/assets/50cb6fbb-3812-484a-a453-262962d416b3" />
 
 - Use the `+` next to **Footage Geo** to create the collection.
   - Add objects/geometry that the footage will be projected onto.
 - Use the `+` next to **Footage Lights** to create the collection.
   - Add recreated lights here (HDRI/World is handled separately).
+(Reset Material option for if there are issues)
 
 <img width="174" height="42" alt="Screenshot_20250920_165812" src="https://github.com/user-attachments/assets/bbf9f9ae-8ff5-447f-bbe2-159afcb2212a" />
 
