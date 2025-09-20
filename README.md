@@ -122,6 +122,7 @@ This fork expands the original Compify with **quality-of-life improvements** and
 
 ### 🔧 Preferences & Shortcuts
 
+- Create reflective surfaces and holdouts for integration
 - Customizable keyboard shortcut to open the Compify panel
 - Auto-update support:
   - Switch between the **official GitHub release** or this **forked build**
