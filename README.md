@@ -13,7 +13,6 @@ This addon was originally created by **Nathan Vegdahl** and **Ian Hubert**. With
 <img width="383" height="213" src="https://github.com/user-attachments/assets/8fb013da-f923-4d66-9a96-b6798e73da52" alt="Main UI Preview" />
 
 
----
 
 ## 🙌 Support Ian Hubert
 
