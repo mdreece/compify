@@ -17,7 +17,6 @@ This addon was originally created by **Nathan Vegdahl** and **Ian Hubert**. With
 
 ## 🙌 Support Ian Hubert
 
-Want this addon to have *official support and updates*?  
  **Subscribe to Ian’s Patreon:**  
 [https://www.patreon.com/IanHubert](https://www.patreon.com/IanHubert)
 
