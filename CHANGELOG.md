@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.1.6] - 2025-09-21
+
+### General improvements
+- Reflections UI adjusted so sections within can be closed.
+- Reflection objects can be selected from dropdown to adjust vs manually finding and clicking on them.
+
+### Fixes
+ - Optimized code/combined functions when/where able
+
+-------------------------------------------------------------------------------
+
 ## [0.1.5] - 2025-09-20
 
 ### General improvements
