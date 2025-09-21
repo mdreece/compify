@@ -6,7 +6,7 @@ Demo: https://youtu.be/GIGjy5w5mak
 
 This addon was originally created by **Nathan Vegdahl** and **Ian Hubert**. Without their work, this unofficial version would not exist. **All credit to them.**
 
-**THERE ARE LIMITATIONS WITH THIS ADDON. MAIN KNOWN IS NO MIRRON REFLECTIONS ATM. THERE ARE OTHERS HERE AND THERE**
+**THERE ARE LIMITATIONS WITH THIS ADDON. MAIN KNOWN IS NO PERFECT MIRROR REFLECTIONS ATM (wip). THERE ARE OTHERS HERE AND THERE**
 
 ---
 
