@@ -7,6 +7,7 @@
 - UI updated to have closing menus
 - Added options for reflections for additional intigration with footage
 - Preferences now has 'popup panel' and 'update' options
+- Scales auto apply when clicking 'Prep Scene'
 
 -------------------------------------------------------------------------------
 
