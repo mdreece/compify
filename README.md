@@ -181,6 +181,7 @@ I'm very open to feedback and collaboration on this fork!
 
 > I love this tool and keep thinking of new features almost weekly.  
 > Feel free to [open issues](../../issues) or contact me!
+> I commit a ton because I'm dumb.
 
 ---
 
