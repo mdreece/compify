@@ -508,7 +508,7 @@ class CompifyAddonPreferences(AddonPreferences):
             version_row.alignment = 'CENTER'
             version_row.scale_y = 0.8
             if self.update_channel == 'UNOFFICIAL':
-                version_row.label(text="Compify v0.1.5 - Unofficial Enhanced Edition", icon='EXPERIMENTAL')
+                version_row.label(text="Compify - Unofficial Edition", icon='EXPERIMENTAL')
             else:
                 version_row.label(text="Compify - Official Stable Version", icon='CHECKMARK')
 
