@@ -125,7 +125,6 @@ This fork expands the original Compify with **quality-of-life improvements** and
 
 ### 🔧 Preferences & Shortcuts
 
-- Create reflective surfaces and holdouts for integration
 - Customizable keyboard shortcut to open the Compify panel
 - Auto-update support:
   - Switch between the **official GitHub release** or this **forked build**
@@ -149,7 +148,10 @@ Tools for compositing **reflections** directly into your scenes.
   Blocks unwanted reflections inside `Reflected Geo` objects.  
   → Perfect for occlusion and cleanup.
 
-Each has dedicated **UI buttons**.
+### Process/UI
+
+ - There are UI button options to quickly mark/move objects
+ - Scale is auto applied to objects added to Footage Geo collection when 'Prep Scene' is clicked
 
 Reflection controls include:
 - Noise
@@ -163,7 +165,7 @@ Reflection controls include:
 ## 🧰 Requirements
 
 - **Blender 4.0.0 or later**  
-  (Tested with Blender **v5.0.0**)
+  (Tested from Blender **v4.2.0** to **v5.0.0**)
 
 ---
 
