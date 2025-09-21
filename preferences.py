@@ -4,7 +4,6 @@ from bpy.props import BoolProperty, StringProperty
 
 
 class CompifyPopupPanel(bpy.types.Panel):
-    """Popup version of the main Compify panel for 3D viewport"""
     bl_label = "Compify"
     bl_idname = "VIEW3D_PT_compify_popup"
     bl_space_type = 'VIEW_3D'
@@ -12,185 +11,27 @@ class CompifyPopupPanel(bpy.types.Panel):
     bl_category = "Compify"
 
     def draw(self, context):
-        layout = self.layout
+        from . import CompifyPanel
 
-        # Add a header tab at the top
+        layout = self.layout
         header_box = layout.box()
         header_row = header_box.row()
         header_row.alignment = 'CENTER'
-        header_row.scale_y = 1.2
-        header_row.label(text="COMPIFY", icon='SCENE_DATA')
+        header_row.scale_y = 1.1
+        header_row.label(text="COMPIFY", icon='SEQ_CHROMA_SCOPE')
 
-        # Add a subtle separator
         layout.separator(factor=0.5)
 
-        # Safety check for compify_config
-        if not hasattr(context.scene, 'compify_config'):
-            error_box = layout.box()
-            error_box.alert = True
-            error_box.label(text="Compify not properly initialized.", icon='ERROR')
-            error_box.label(text="Please restart Blender.")
-            return
-
-        config = context.scene.compify_config
-
-        #-------- FOOTAGE SECTION (Collapsible) --------
-        box = layout.box()
-        row = box.row()
-        row.prop(config, "show_footage_section",
-                icon='TRIA_DOWN' if config.show_footage_section else 'TRIA_RIGHT',
-                icon_only=True, emboss=False)
-        row.label(text="Footage", icon='IMAGE_DATA')
-
-        if config.show_footage_section:
-            col = box.column()
-            col.template_ID(config, "footage", open="image.open")
-            col.use_property_split = True
-            if config.footage != None:
-                col.prop(config.footage, "source")
-                col.prop(config.footage.colorspace_settings, "name", text="Color Space")
-
-            # Camera selection
-            col.prop(config, "camera", text="Camera")
-
-        #-------- COLLECTIONS SECTION (Collapsible) --------
-        box = layout.box()
-        row = box.row()
-        row.prop(config, "show_collections_section",
-                icon='TRIA_DOWN' if config.show_collections_section else 'TRIA_RIGHT',
-                icon_only=True, emboss=False)
-        row.label(text="Collections", icon='OUTLINER_COLLECTION')
-
-        # Check if active object has a compify material and show reset button if so
-        if context.active_object and context.active_object.type == 'MESH':
-            has_compify_mat = False
-            if context.active_object.data.materials:
-                for mat in context.active_object.data.materials:
-                    if mat and (mat.name.startswith("Compify Footage") or "_Reflector_" in mat.name):
-                        has_compify_mat = True
-                        break
-
-            if has_compify_mat:
-                row.operator("material.compify_reset_material", text="", icon='FILE_REFRESH')
-
-        if config.show_collections_section:
-            col = box.column()
-            col.use_property_split = True
-
-            # Footage Geo Collection
-            row1 = col.row()
-            row1.prop(config, "geo_collection", text="Footage Geo")
-            row1.operator("scene.compify_add_footage_geo_collection", text="", icon='ADD')
-
-            # Footage Lights Collection
-            row2 = col.row()
-            row2.prop(config, "lights_collection", text="Footage Lights")
-            row2.operator("scene.compify_add_footage_lights_collection", text="", icon='ADD')
-
-        #-------- REFLECTIONS SECTION (Collapsible) --------
-        box = layout.box()
-        row = box.row()
-        row.prop(config, "show_reflections_section",
-                icon='TRIA_DOWN' if config.show_reflections_section else 'TRIA_RIGHT',
-                icon_only=True, emboss=False)
-        row.label(text="Reflections", icon='SHADING_RENDERED')
-
-        if config.show_reflections_section:
-            col = box.column()
-            col.use_property_split = True
-
-            # Reflective Geo Collection
-            row3 = col.row()
-            row3.prop(config, "reflectors_collection", text="Reflective Geo")
-            row3.operator("scene.compify_add_reflectors_collection", text="", icon='ADD')
-
-            # Reflected Geo Collection
-            row4 = col.row()
-            row4.prop(config, "reflectees_collection", text="Reflected Geo")
-            row4.operator("scene.compify_add_reflectees_collection", text="", icon='ADD')
-
-            # Holdout Geo Collection
-            row5 = col.row()
-            row5.prop(config, "holdout_collection", text="Holdout Geo")
-            row5.operator("scene.compify_add_holdout_collection", text="", icon='ADD')
-
-            # Per-Object Settings (if object selected) - Condensed for popup
-            if context.active_object:
-                obj = context.active_object
-                col.separator()
-                col.label(text=f"Selected: {obj.name}", icon='OBJECT_DATA')
-
-                # Reflector settings for mesh objects
-                if obj.type == 'MESH':
-                    sub_box = col.box()
-
-                    # Check if object has reflector material
-                    has_reflector_mat = False
-                    for mat in obj.data.materials if obj.data.materials else []:
-                        if mat and "_Reflector_" in mat.name:
-                            has_reflector_mat = True
-                            break
-
-                    if not has_reflector_mat:
-                        sub_box.operator("scene.compify_make_reflective",
-                                       text="Make Reflective", icon='SHADING_RENDERED')
-                    else:
-                        sub_box.label(text="✓ Reflective", icon='CHECKMARK')
-                        # Quick controls for popup
-                        sub_box.prop(obj.compify_reflection, "reflection_strength", text="Strength", slider=True)
-                        sub_box.prop(obj.compify_reflection, "reflection_roughness", text="Roughness", slider=True)
-                        sub_box.operator("scene.compify_force_update_reflector", text="Apply", icon='FILE_REFRESH')
-
-                # Reflection visibility controls
-                col.separator()
-                reflect_box = col.box()
-
-                if hasattr(obj, 'compify_reflection') and obj.compify_reflection.reflection_holdout:
-                    reflect_box.label(text="✓ Holdout", icon='HOLDOUT_ON')
-                    reflect_box.operator("scene.compify_remove_holdout", text="Remove Holdout", icon='X')
-                else:
-                    col_options = reflect_box.column(align=True)
-                    col_options.operator("scene.compify_make_object_reflect",
-                                        text="Make Visible in Reflections", icon='HIDE_OFF')
-                    if obj.type == 'MESH':
-                        col_options.operator("scene.compify_make_holdout",
-                                            text="Make Holdout", icon='HOLDOUT_OFF')
-
-        #-------- BAKING SETTINGS SECTION (Collapsible) --------
-        box = layout.box()
-        row = box.row()
-        row.prop(config, "show_baking_section",
-                icon='TRIA_DOWN' if config.show_baking_section else 'TRIA_RIGHT',
-                icon_only=True, emboss=False)
-        row.label(text="Baking", icon='RENDER_STILL')
-
-        if config.show_baking_section:
-            col = box.column()
-            col.use_property_split = True
-            col.prop(config, "bake_uv_margin")
-            col.prop(config, "bake_image_res")
-
-        #-------- MAIN ACTION BUTTONS (Always visible) --------
-        layout.separator(factor=1.0)
-
-        # Action buttons in a nice box
-        action_box = layout.box()
-        col = action_box.column(align=True)
-        col.scale_y = 1.2
-        col.operator("material.compify_prep_scene", icon='SCENE_DATA')
-        col.operator("material.compify_bake", icon='RENDER_STILL')
-        col.operator("render.compify_render", icon='RENDER_ANIMATION')
+        CompifyPanel.draw(self, context)
 
 
 class CompifyOpenPopupOperator(bpy.types.Operator):
-    """Open Compify panel as popup in 3D viewport"""
     bl_idname = "compify.open_popup_panel"
     bl_label = "Open Compify Panel"
     bl_description = "Open the Compify panel as a popup in the 3D viewport"
     bl_options = {'REGISTER'}
 
     def execute(self, context):
-        # Get the preferences to check if popup is enabled
         prefs = get_compify_preferences()
         if not prefs.enable_popup_panel:
             self.report({'WARNING'}, "Popup panel is disabled in addon preferences")
@@ -199,12 +40,10 @@ class CompifyOpenPopupOperator(bpy.types.Operator):
         return context.window_manager.invoke_popup(self, width=400)
 
     def draw(self, context):
-        # Use the exact same draw method as the popup panel
         CompifyPopupPanel.draw(self, context)
 
 
 class CompifyCheckUpdatesOperator(bpy.types.Operator):
-    """Check for Compify updates from selected repository"""
     bl_idname = "compify.check_updates"
     bl_label = "Check Updates"
     bl_description = "Check for available updates from the selected repository"
@@ -478,25 +317,22 @@ class CompifyAddonPreferences(AddonPreferences):
     """Compify addon preferences"""
     bl_idname = __package__
 
-    # Popup Panel Settings
     enable_popup_panel: BoolProperty(
         name="Enable Popup Panel",
         description="Enable the ability to open Compify panel as popup in 3D viewport",
         default=True,
     )
 
-    # Simple shortcut recording system
     shortcut_recording: BoolProperty(
         name="Recording Shortcut",
         description="Currently recording a new shortcut",
         default=False,
     )
 
-    # Store the actual shortcut components (no underscore prefixes!)
     shortcut_key_internal: StringProperty(
         name="Internal Shortcut Key",
         description="Internal storage for shortcut key",
-        default="C"
+        default="none"
     )
 
     shortcut_ctrl_internal: BoolProperty(
@@ -523,14 +359,12 @@ class CompifyAddonPreferences(AddonPreferences):
         default=False
     )
 
-    # UI collapse state for combined updates and information section
     show_updates_info_section: BoolProperty(
         name="Show Updates and Information Section",
         description="Toggle updates and information section visibility",
         default=True,
     )
 
-    # Update checking options
     update_channel: bpy.props.EnumProperty(
         name="Update Channel",
         description="Choose which repository to check for updates",
@@ -541,7 +375,6 @@ class CompifyAddonPreferences(AddonPreferences):
         default='UNOFFICIAL',
     )
 
-    # Update status tracking
     update_status: bpy.props.StringProperty(
         name="Update Status",
         description="Current update check status",
@@ -560,7 +393,6 @@ class CompifyAddonPreferences(AddonPreferences):
         default="",
     )
 
-    # UI collapse state for popup panel section
     show_popup_panel_section: BoolProperty(
         name="Show Popup Panel Section",
         description="Toggle popup panel section visibility",
@@ -570,7 +402,6 @@ class CompifyAddonPreferences(AddonPreferences):
     def draw(self, context):
         layout = self.layout
 
-        # Combined Updates and Information Section (Collapsible)
         box = layout.box()
         row = box.row()
         row.prop(self, "show_updates_info_section",
@@ -581,17 +412,14 @@ class CompifyAddonPreferences(AddonPreferences):
         if self.show_updates_info_section:
             col = box.column()
 
-            # Update channel selection at the top
             channel_box = col.box()
             channel_box.label(text="Version Channel", icon='PREFERENCES')
 
             channel_row = channel_box.row()
             channel_row.prop(self, "update_channel", text="")
 
-            # Dynamic Information section based on selected channel
             info_box = col.box()
 
-            # Header changes based on channel
             header_row = info_box.row()
             header_row.alignment = 'CENTER'
             if self.update_channel == 'UNOFFICIAL':
@@ -601,7 +429,7 @@ class CompifyAddonPreferences(AddonPreferences):
 
             info_box.separator()
 
-            # Ian Hubert's Patreon (always shown)
+            # Ian's Patreon! SUPPORT !!! lol
             patreon_box = info_box.box()
             patreon_header = patreon_box.row()
             patreon_header.scale_y = 1.1
@@ -615,17 +443,15 @@ class CompifyAddonPreferences(AddonPreferences):
 
             info_box.separator(factor=0.5)
 
-            # Dynamic links based on selected channel
+
             links_col = info_box.column(align=True)
 
             if self.update_channel == 'UNOFFICIAL':
-                # Unofficial version links
                 unofficial_row = links_col.row(align=True)
                 unofficial_row.scale_y = 1.0
                 unofficial_btn = unofficial_row.operator("wm.url_open", text="🔗  Unofficial Repository & Docs", icon='URL')
                 unofficial_btn.url = "https://github.com/mdreece/compify"
 
-                # Feature description
                 info_box.separator(factor=0.3)
                 desc_col = info_box.column()
                 desc_col.scale_y = 0.7
@@ -646,13 +472,11 @@ class CompifyAddonPreferences(AddonPreferences):
                 feature_col.label(text="• Blender 4.3-5.0 compatibility updates", icon='BLANK1')
 
             else:
-                # Official version links
                 official_row = links_col.row(align=True)
                 official_row.scale_y = 1.0
                 official_btn = official_row.operator("wm.url_open", text="📚  Official Repository & Documentation", icon='HELP')
                 official_btn.url = "https://github.com/EatTheFuture/compify"
 
-                # Feature description
                 info_box.separator(factor=0.3)
                 desc_col = info_box.column()
                 desc_col.scale_y = 0.7
@@ -662,7 +486,6 @@ class CompifyAddonPreferences(AddonPreferences):
                 desc_row1.alignment = 'CENTER'
                 desc_row1.label(text="📚 Official stable version with original feature set")
 
-                # Warning about missing features
                 warning_box = info_box.box()
                 warning_box.alert = True
                 warning_box.label(text="⚠️ Note: Official version lacks unofficial enhancements", icon='ERROR')
@@ -672,7 +495,6 @@ class CompifyAddonPreferences(AddonPreferences):
                 missing_col.label(text="• Basic material handling only", icon='BLANK1')
                 missing_col.label(text="• Limited UI improvements", icon='BLANK1')
 
-                # Install official version option
                 install_box = info_box.box()
                 install_box.label(text="Switch to Official Version:", icon='IMPORT')
                 install_row = install_box.row()
@@ -681,7 +503,6 @@ class CompifyAddonPreferences(AddonPreferences):
                 install_op.url = "https://github.com/EatTheFuture/compify/archive/refs/heads/master.zip"
                 install_op.is_official = True
 
-            # Version info
             info_box.separator(factor=0.3)
             version_row = info_box.row()
             version_row.alignment = 'CENTER'
@@ -691,12 +512,10 @@ class CompifyAddonPreferences(AddonPreferences):
             else:
                 version_row.label(text="Compify - Official Stable Version", icon='CHECKMARK')
 
-            # Update checking section
             col.separator()
             update_box = col.box()
             update_box.label(text="Update Checking", icon='FILE_REFRESH')
 
-            # Check for updates button
             check_row = update_box.row()
             check_row.scale_y = 1.2
             if self.update_channel == 'UNOFFICIAL':
@@ -704,7 +523,6 @@ class CompifyAddonPreferences(AddonPreferences):
             else:
                 check_row.operator("compify.check_updates", text="Check for Official Updates", icon='FILE_REFRESH')
 
-            # Update status display
             if self.update_status:
                 status_box = update_box.box()
 
@@ -713,7 +531,6 @@ class CompifyAddonPreferences(AddonPreferences):
                     status_row = status_box.row()
                     status_row.label(text=f"✅ Update Available: {self.latest_version}", icon='CHECKMARK')
 
-                    # Warning about version differences when switching to official
                     if self.update_channel == 'OFFICIAL':
                         warning_box = status_box.box()
                         warning_box.alert = True
@@ -736,7 +553,6 @@ class CompifyAddonPreferences(AddonPreferences):
                 error_box.label(text="❌ Failed to check for updates", icon='ERROR')
                 error_box.label(text="Check your internet connection", icon='BLANK1')
 
-        # Popup Panel Settings (Collapsible)
         box = layout.box()
         row = box.row()
         row.prop(self, "show_popup_panel_section",
@@ -751,13 +567,10 @@ class CompifyAddonPreferences(AddonPreferences):
             if self.enable_popup_panel:
                 col.separator()
 
-                # Simple shortcut display and recording
                 shortcut_box = col.box()
 
-                # Current shortcut display
                 current_shortcut = self.get_current_shortcut_display()
 
-                # Main shortcut row
                 main_row = shortcut_box.row(align=True)
                 main_row.scale_y = 1.3
 
@@ -820,7 +633,6 @@ class CompifyAddonPreferences(AddonPreferences):
                         status_row.label(text="No shortcut set", icon='RADIOBUT_OFF')
 
     def get_current_shortcut_display(self):
-        """Get a clean display string for the current shortcut"""
         if not self.shortcut_key_internal:
             return "None"
 
@@ -834,7 +646,6 @@ class CompifyAddonPreferences(AddonPreferences):
         if self.shortcut_oskey_internal:
             modifiers.append("Cmd" if bpy.app.platform == 'DARWIN' else "Win")
 
-        # Clean up key display
         key_display = self.shortcut_key_internal
         key_map = {
             'SPACE': 'Space',
@@ -859,7 +670,6 @@ class CompifyAddonPreferences(AddonPreferences):
             return key_display
 
     def check_shortcut_conflicts(self):
-        """Simplified conflict checking"""
         if not self.shortcut_key_internal:
             return []
 
@@ -880,7 +690,6 @@ class CompifyAddonPreferences(AddonPreferences):
             if key in major_conflicts:
                 conflicts.append(f"Conflicts with {major_conflicts[key]}")
 
-        # Check common Ctrl shortcuts
         if self.shortcut_ctrl_internal and not (self.shortcut_alt_internal or self.shortcut_shift_internal):
             ctrl_conflicts = {
                 'C': "Copy",
@@ -895,31 +704,25 @@ class CompifyAddonPreferences(AddonPreferences):
         return conflicts
 
     def get_download_url(self):
-        """Get the appropriate download URL based on update channel"""
         if self.update_channel == 'OFFICIAL':
             return "https://github.com/EatTheFuture/compify/archive/refs/heads/master.zip"
         else:
             return "https://github.com/mdreece/compify/archive/refs/heads/master.zip"
 
 
-# Keymap management functions
 def get_compify_preferences():
-    """Get the Compify addon preferences"""
     return bpy.context.preferences.addons[__package__].preferences
 
 
 def add_compify_keymap_from_prefs(prefs):
-    """Add keymap for Compify popup panel using preferences"""
     if not prefs.shortcut_key_internal:
         return False
 
-    # Get the keymap
     wm = bpy.context.window_manager
     kc = wm.keyconfigs.addon
     if kc:
         km = kc.keymaps.new(name='3D View', space_type='VIEW_3D')
 
-        # Create the keymap item
         kmi = km.keymap_items.new(
             "compify.open_popup_panel",
             type=prefs.shortcut_key_internal,
@@ -941,18 +744,16 @@ def add_compify_keymap_from_prefs(prefs):
 
 
 def remove_compify_keymap():
-    """Remove Compify keymap"""
     if hasattr(bpy.types.Scene, 'compify_keymap_items'):
         for km, kmi in bpy.types.Scene.compify_keymap_items:
             try:
                 km.keymap_items.remove(kmi)
             except:
-                pass  # Keymap item might already be removed
+                pass
         bpy.types.Scene.compify_keymap_items.clear()
 
 
 def get_keymap_info():
-    """Get information about current keymap"""
     if hasattr(bpy.types.Scene, 'compify_keymap_items') and bpy.types.Scene.compify_keymap_items:
         try:
             km, kmi = bpy.types.Scene.compify_keymap_items[0]
@@ -977,7 +778,6 @@ def get_keymap_info():
 
 # Registration functions
 def register_preferences():
-    """Register preferences classes and setup keymap"""
     bpy.utils.register_class(CompifyPopupPanel)
     bpy.utils.register_class(CompifyOpenPopupOperator)
     bpy.utils.register_class(CompifyCheckUpdatesOperator)
@@ -988,7 +788,6 @@ def register_preferences():
     bpy.utils.register_class(CompifyRemoveKeymapOperator)
     bpy.utils.register_class(CompifyAddonPreferences)
 
-    # Initialize keymap if preferences exist
     try:
         prefs = get_compify_preferences()
         if prefs.enable_popup_panel and prefs.shortcut_key_internal:
@@ -998,7 +797,6 @@ def register_preferences():
 
 
 def unregister_preferences():
-    """Unregister preferences classes and remove keymap"""
     remove_compify_keymap()
 
     bpy.utils.unregister_class(CompifyAddonPreferences)
@@ -1011,6 +809,5 @@ def unregister_preferences():
     bpy.utils.unregister_class(CompifyOpenPopupOperator)
     bpy.utils.unregister_class(CompifyPopupPanel)
 
-    # Clean up keymap references
     if hasattr(bpy.types.Scene, 'compify_keymap_items'):
         del bpy.types.Scene.compify_keymap_items
