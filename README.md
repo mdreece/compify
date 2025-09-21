@@ -27,7 +27,8 @@ https://github.com/EatTheFuture/compify
 
 ---
 
-<img width="409" height="513" src="https://github.com/user-attachments/assets/eec98d54-c287-4f73-8473-025e0852036e" alt="Support Ian Screenshot" />
+<img width="417" height="597" alt="Screenshot_20250921_150700" src="https://github.com/user-attachments/assets/21113225-67de-46d8-9248-fa83d7094c35" />
+
 
 ##  Original Addon Description
 
