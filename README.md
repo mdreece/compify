@@ -148,6 +148,8 @@ Tools for compositing **reflections** directly into your scenes.
   Blocks unwanted reflections inside `Reflected Geo` objects.  
   → Perfect for occlusion and cleanup.
 
+---
+
 ### Process/UI
 
  - There are UI button options to quickly mark/move objects
