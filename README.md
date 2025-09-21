@@ -36,6 +36,14 @@ https://github.com/EatTheFuture/compify
 
 ---
 
+## Examples 
+
+<img width="960" height="540" alt="hall" src="https://github.com/user-attachments/assets/c11d4716-7084-454e-bb33-de304401a655" />
+
+<img width="960" height="540" alt="pond" src="https://github.com/user-attachments/assets/38e612fd-982e-42f5-98e8-9c5dca0ec232" />
+
+---
+
 ##  How to Use
 
 The moderate expectation is that you have recreated your scene in some way for the Compify process to work with.  
