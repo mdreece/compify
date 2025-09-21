@@ -25,10 +25,9 @@ https://github.com/EatTheFuture/compify
 
 > *(I am doing this purely as a user and make no income from these changes/updates.)*
 
-<img width="409" height="513" src="https://github.com/user-attachments/assets/eec98d54-c287-4f73-8473-025e0852036e" alt="Support Ian Screenshot" />
-
-
 ---
+
+<img width="409" height="513" src="https://github.com/user-attachments/assets/eec98d54-c287-4f73-8473-025e0852036e" alt="Support Ian Screenshot" />
 
 ##  Original Addon Description
 
