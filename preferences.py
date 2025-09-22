@@ -1,14 +1,50 @@
 import bpy
 from bpy.types import AddonPreferences
-from bpy.props import BoolProperty, StringProperty
+from bpy.props import BoolProperty, StringProperty, EnumProperty
 
 
-class CompifyPopupPanel(bpy.types.Panel):
+class CompifyNPanelPanel(bpy.types.Panel):
     bl_label = "Compify"
-    bl_idname = "VIEW3D_PT_compify_popup"
+    bl_idname = "VIEW3D_PT_compify_npanel"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = "Compify"
+
+    @classmethod
+    def poll(cls, context):
+        prefs = get_compify_preferences()
+        return prefs.panel_location in ['N_PANEL', 'BOTH']
+
+    def draw(self, context):
+        from . import CompifyPanel
+
+        layout = self.layout
+
+        header_box = layout.box()
+        header_row = header_box.row()
+        header_row.alignment = 'CENTER'
+        header_row.scale_y = 0.8
+        header_row.label(text="3D Viewport Panel", icon='VIEW3D')
+
+        layout.separator(factor=0.3)
+
+        # Use the main CompifyPanel's draw method
+        CompifyPanel.draw(self, context)
+
+
+class CompifyOpenPopupOperator(bpy.types.Operator):
+    bl_idname = "compify.open_popup_panel"
+    bl_label = "Compify"
+    bl_description = "Open the Compify panel as a popup in the 3D viewport"
+    bl_options = {'REGISTER'}
+
+    def execute(self, context):
+        prefs = get_compify_preferences()
+        if not prefs.enable_popup_panel:
+            self.report({'WARNING'}, "Popup panel is disabled in addon preferences")
+            return {'CANCELLED'}
+
+        return context.window_manager.invoke_popup(self, width=400)
 
     def draw(self, context):
         from . import CompifyPanel
@@ -23,24 +59,6 @@ class CompifyPopupPanel(bpy.types.Panel):
         layout.separator(factor=0.5)
 
         CompifyPanel.draw(self, context)
-
-
-class CompifyOpenPopupOperator(bpy.types.Operator):
-    bl_idname = "compify.open_popup_panel"
-    bl_label = "Open Compify Panel"
-    bl_description = "Open the Compify panel as a popup in the 3D viewport"
-    bl_options = {'REGISTER'}
-
-    def execute(self, context):
-        prefs = get_compify_preferences()
-        if not prefs.enable_popup_panel:
-            self.report({'WARNING'}, "Popup panel is disabled in addon preferences")
-            return {'CANCELLED'}
-
-        return context.window_manager.invoke_popup(self, width=400)
-
-    def draw(self, context):
-        CompifyPopupPanel.draw(self, context)
 
 
 class CompifyCheckUpdatesOperator(bpy.types.Operator):
@@ -285,10 +303,8 @@ class CompifyUpdateKeymapOperator(bpy.types.Operator):
             self.report({'ERROR'}, "No shortcut set")
             return {'CANCELLED'}
 
-        # Remove existing keymap first
         remove_compify_keymap()
 
-        # Add new keymap
         if prefs.enable_popup_panel:
             success = add_compify_keymap_from_prefs(prefs)
             if success:
@@ -332,7 +348,7 @@ class CompifyAddonPreferences(AddonPreferences):
     shortcut_key_internal: StringProperty(
         name="Internal Shortcut Key",
         description="Internal storage for shortcut key",
-        default="none"
+        default="",
     )
 
     shortcut_ctrl_internal: BoolProperty(
@@ -362,10 +378,10 @@ class CompifyAddonPreferences(AddonPreferences):
     show_updates_info_section: BoolProperty(
         name="Show Updates and Information Section",
         description="Toggle updates and information section visibility",
-        default=True,
+        default=False,
     )
 
-    update_channel: bpy.props.EnumProperty(
+    update_channel: EnumProperty(
         name="Update Channel",
         description="Choose which repository to check for updates",
         items=[
@@ -396,12 +412,40 @@ class CompifyAddonPreferences(AddonPreferences):
     show_popup_panel_section: BoolProperty(
         name="Show Popup Panel Section",
         description="Toggle popup panel section visibility",
-        default=True,
+        default=False,
+    )
+
+    # New UI Settings section
+    show_ui_settings_section: BoolProperty(
+        name="Show UI Settings Section",
+        description="Toggle UI settings section visibility",
+        default=False,
+    )
+
+    panel_location: EnumProperty(
+        name="Panel Location",
+        description="Choose where the Compify panel should appear",
+        items=[
+            ('SCENE_PROPERTIES', "Scene Properties Only", "Show Compify panel only in Scene Properties (default)"),
+            ('N_PANEL', "3D Viewport N-Panel Only", "Show Compify panel only in 3D Viewport N-Panel"),
+            ('BOTH', "Both Locations", "Show Compify panel in both Scene Properties and N-Panel"),
+            ('NONE', "Hidden", "Hide Compify panel from all locations (popup shortcut only)"),
+        ],
+        default='SCENE_PROPERTIES',
+        update=lambda self, context: update_panel_visibility(self, context)
+    )
+
+    n_panel_category: bpy.props.StringProperty(
+        name="N-Panel Tab Name",
+        description="Name of the tab in the N-Panel where Compify will appear",
+        default="Compify",
+        update=lambda self, context: update_panel_visibility(self, context)
     )
 
     def draw(self, context):
         layout = self.layout
 
+        # Updates & Information section (closed by default)
         box = layout.box()
         row = box.row()
         row.prop(self, "show_updates_info_section",
@@ -442,7 +486,6 @@ class CompifyAddonPreferences(AddonPreferences):
             patreon_desc.label(text="Thank you for funding Compify's development!", icon='NONE')
 
             info_box.separator(factor=0.5)
-
 
             links_col = info_box.column(align=True)
 
@@ -558,79 +601,329 @@ class CompifyAddonPreferences(AddonPreferences):
         row.prop(self, "show_popup_panel_section",
                 icon='TRIA_DOWN' if self.show_popup_panel_section else 'TRIA_RIGHT',
                 icon_only=True, emboss=False)
-        row.label(text="Popup Panel Settings", icon='WINDOW')
+        row.label(text="Keyboard Shortcut", icon='KEYINGSET')
 
         if self.show_popup_panel_section:
-            col = box.column()
-            col.prop(self, "enable_popup_panel")
+            main_col = box.column()
+
+            card = main_col.box()
+            card_col = card.column()
+
+            hero_row = card_col.row(align=False)
+            hero_row.scale_y = 1.4
+
+            left_col = hero_row.column()
+            left_col.alignment = 'LEFT'
+
+            status_row = left_col.row(align=True)
 
             if self.enable_popup_panel:
-                col.separator()
+                status_icon = status_row.row()
+                status_icon.enabled = False
+                status_icon.label(text="", icon='RADIOBUT_ON')
 
-                shortcut_box = col.box()
+                status_text = status_row.row()
+                status_text.scale_x = 0.1
+                status_text.label(text="ENABLED")
+            else:
+                status_icon = status_row.row()
+                status_icon.enabled = False
+                status_icon.label(text="", icon='RADIOBUT_OFF')
+
+                status_text = status_row.row()
+                status_text.scale_x = 0.1
+                status_text.label(text="DISABLED")
+
+            # Toggle button row
+            toggle_row = left_col.row()
+            toggle_row.prop(self, "enable_popup_panel", text="Quick Access Popup", toggle=True, icon='NONE')
+
+            # Right side - Description
+            if self.enable_popup_panel:
+                right_col = hero_row.column()
+                right_col.alignment = 'RIGHT'
+                desc_row = right_col.row()
+                desc_row.scale_y = 0.8
+                desc_row.alignment = 'RIGHT'
+                desc_row.label(text="Press shortcut in 3D viewport")
+
+                desc_row2 = right_col.row()
+                desc_row2.scale_y = 0.8
+                desc_row2.alignment = 'RIGHT'
+                desc_row2.label(text="to open Compify panel")
+
+            if self.enable_popup_panel:
+                card_col.separator()
+
+                shortcut_section = card_col.column()
 
                 current_shortcut = self.get_current_shortcut_display()
-
-                main_row = shortcut_box.row(align=True)
-                main_row.scale_y = 1.3
-
-                # Shortcut display button
-                if self.shortcut_recording:
-                    shortcut_btn = main_row.operator("compify.record_shortcut",
-                                                   text="Press keys now...",
-                                                   icon='REC')
-                    shortcut_btn.deferred = False  # Stop recording
-                else:
-                    shortcut_btn = main_row.operator("compify.record_shortcut",
-                                                   text=current_shortcut,
-                                                   icon='KEYINGSET')
-                    shortcut_btn.deferred = True  # Start recording
-
-                # Clear button
-                clear_btn = main_row.operator("compify.clear_shortcut", text="", icon='X')
-
-                # Recording instructions
-                if self.shortcut_recording:
-                    info_row = shortcut_box.row()
-                    info_row.alert = True
-                    info_row.label(text="Press any key combination (Escape to cancel)", icon='INFO')
-                else:
-                    # Show helpful info
-                    info_row = shortcut_box.row()
-                    info_row.label(text="Click the shortcut button above to set a new key combination")
-
-                # Conflict warnings
-                if not self.shortcut_recording:
-                    conflicts = self.check_shortcut_conflicts()
-                    if conflicts:
-                        conflict_box = shortcut_box.box()
-                        conflict_box.alert = True
-                        conflict_box.label(text="⚠ Potential Conflicts:", icon='ERROR')
-                        for conflict in conflicts[:2]:  # Limit to 2 for cleaner UI
-                            conflict_box.label(text=f"• {conflict}")
-
-                # Apply/Status section
-                shortcut_box.separator()
-                status_row = shortcut_box.row()
-
-                # Check if keymap is active
                 keymap_info = get_keymap_info()
+                is_active = False
+
                 if keymap_info:
                     active_shortcut = f"{'+'.join(keymap_info['modifiers'] + [keymap_info['key']])}"
-                    if active_shortcut == current_shortcut.replace(" ", ""):
-                        status_row.label(text="✓ Shortcut Active", icon='CHECKMARK')
-                    else:
-                        status_row.label(text="⚠ Shortcut Changed - Click Apply", icon='ERROR')
-                        apply_row = shortcut_box.row()
-                        apply_row.scale_y = 1.2
-                        apply_row.operator("compify.update_keymap", text="Apply New Shortcut", icon='CHECKMARK')
+                    is_active = active_shortcut == current_shortcut.replace(" ", "")
+
+                if self.shortcut_recording:
+                    recording_card = shortcut_section.box()
+                    recording_card.alert = True
+
+                    rec_header = recording_card.row()
+                    rec_header.alignment = 'CENTER'
+                    rec_header.scale_y = 1.2
+                    rec_header.label(text="● RECORDING", icon='NONE')
+
+                    rec_main = recording_card.row()
+                    rec_main.alignment = 'CENTER'
+                    rec_main.scale_y = 2.0
+                    stop_btn = rec_main.operator("compify.record_shortcut",
+                                                text="Press Any Key Combination",
+                                                icon='RADIOBUT_ON')
+                    stop_btn.deferred = False
+
+                    rec_help = recording_card.row()
+                    rec_help.alignment = 'CENTER'
+                    rec_help.scale_y = 0.8
+                    rec_help.label(text="Escape to cancel • Try Ctrl+Shift+C or Alt+Q")
+
                 else:
+                    dashboard = shortcut_section.row(align=False)
+
+                    left_panel = dashboard.column()
+                    left_panel.scale_x = 1.5
+
+                    current_box = left_panel.box()
+
+                    current_header = current_box.row()
+                    current_header.scale_y = 0.8
+                    current_header.label(text="CURRENT SHORTCUT", icon='NONE')
+
+                    shortcut_display_row = current_box.row(align=True)
+
+                    # Status dot
+                    status_col = shortcut_display_row.column()
+                    status_col.scale_x = 0.3
+                    status_col.alignment = 'CENTER'
+
                     if current_shortcut != "None":
-                        apply_row = status_row.row()
-                        apply_row.scale_y = 1.2
-                        apply_row.operator("compify.update_keymap", text="Apply Shortcut", icon='CHECKMARK')
+                        if is_active:
+                            status_col.label(text="●", icon='NONE')  # Green
+                        else:
+                            status_col.alert = True
+                            status_col.label(text="●", icon='NONE')  # Red
                     else:
-                        status_row.label(text="No shortcut set", icon='RADIOBUT_OFF')
+                        status_col.enabled = False
+                        status_col.label(text="●", icon='NONE')  # Gray
+
+                    # Shortcut text
+                    shortcut_col = shortcut_display_row.column()
+                    shortcut_text_row = shortcut_col.row()
+                    shortcut_text_row.scale_y = 1.6
+
+                    if current_shortcut != "None":
+                        shortcut_text_row.alignment = 'LEFT'
+                        shortcut_text_row.label(text=current_shortcut)
+                    else:
+                        shortcut_text_row.alignment = 'LEFT'
+                        shortcut_text_row.enabled = False
+                        shortcut_text_row.label(text="Not Set")
+
+                    # Status text
+                    status_text_row = shortcut_col.row()
+                    status_text_row.scale_y = 0.7
+
+                    if current_shortcut != "None":
+                        if is_active:
+                            status_text_row.label(text="Active and ready")
+                        else:
+                            status_text_row.alert = True
+                            status_text_row.label(text="Click Apply to activate")
+                    else:
+                        status_text_row.enabled = False
+                        status_text_row.label(text="Click Set to configure")
+
+                    # Right panel - Actions (Professional button design)
+                    right_panel = dashboard.column()
+                    actions_box = right_panel.box()
+
+                    actions_header = actions_box.row()
+                    actions_header.scale_y = 0.8
+                    actions_header.label(text="ACTIONS", icon='NONE')
+
+                    actions_col = actions_box.column()
+
+                    # Primary action button - larger and more prominent
+                    primary_section = actions_col.column()
+                    primary_section.scale_y = 1.6
+
+                    if current_shortcut == "None":
+                        # Set shortcut button - Call to action style
+                        primary_row = primary_section.row()
+                        primary_row.operator_context = 'INVOKE_DEFAULT'
+                        set_btn = primary_row.operator("compify.record_shortcut",
+                                                     text="● Set Shortcut",
+                                                     icon='NONE')
+                        set_btn.deferred = True
+
+                    elif not is_active:
+                        primary_row = primary_section.row()
+                        primary_row.alert = False
+                        apply_btn = primary_row.operator("compify.update_keymap",
+                                                       text="⚡ Apply",
+                                                       icon='NONE')
+
+                    else:
+                        primary_row = primary_section.row()
+                        test_btn = primary_row.operator("compify.open_popup_panel",
+                                                       text="▶ Test Now",
+                                                       icon='NONE')
+
+                    if current_shortcut != "None":
+                        actions_col.separator(factor=0.6)
+
+                        secondary_section = actions_col.column()
+
+                        button_grid = secondary_section.row(align=True)
+                        button_grid.scale_y = 1.2
+
+                        edit_col = button_grid.column()
+                        edit_col.scale_x = 1.2
+                        change_btn = edit_col.operator("compify.record_shortcut",
+                                                     text="Edit",
+                                                     icon='GREASEPENCIL')
+                        change_btn.deferred = True
+
+                        remove_col = button_grid.column()
+                        remove_col.scale_x = 1.2
+                        clear_btn = remove_col.operator("compify.clear_shortcut",
+                                                       text="Remove",
+                                                       icon='TRASH')
+
+                    else:
+                        actions_col.separator(factor=0.4)
+                        helper_row = actions_col.row()
+                        helper_row.scale_y = 0.8
+                        helper_row.enabled = False
+                        helper_row.alignment = 'CENTER'
+                        helper_row.label(text="No shortcut configured")
+
+                if not self.shortcut_recording and current_shortcut != "None":
+                    conflicts = self.check_shortcut_conflicts()
+
+                    if conflicts:
+                        shortcut_section.separator(factor=0.5)
+
+                        # Warning Warning. red alert. you have been hecked.
+                        warning_card = shortcut_section.box()
+                        warning_card.alert = True
+
+                        warning_header = warning_card.row(align=True)
+                        warning_icon = warning_header.row()
+                        warning_icon.scale_x = 0.5
+                        warning_icon.label(text="", icon='ERROR')
+
+                        warning_text = warning_header.row()
+                        warning_text.label(text="SHORTCUT CONFLICTS DETECTED")
+
+                        for conflict in conflicts[:2]:
+                            conflict_row = warning_card.row()
+                            conflict_row.scale_y = 0.9
+
+                            bullet_col = conflict_row.column()
+                            bullet_col.scale_x = 0.3
+                            bullet_col.label(text="•")
+
+                            conflict_col = conflict_row.column()
+                            conflict_col.label(text=conflict)
+
+                # Modern tips section
+                if not self.shortcut_recording:
+                    shortcut_section.separator()
+
+                    tips_card = shortcut_section.box()
+                    tips_card.enabled = False  # Subtle appearance
+
+                    tips_header = tips_card.row(align=True)
+                    tips_icon = tips_header.row()
+                    tips_icon.scale_x = 0.5
+                    tips_icon.label(text="", icon='INFO')
+
+                    tips_text = tips_header.row()
+                    tips_text.label(text="RECOMMENDED SHORTCUTS")
+
+                    # Shortcut suggestions in a clean grid
+                    suggestions_row = tips_card.row(align=True)
+
+                    for suggestion in ["Ctrl+Shift+C", "Alt+Q", "Ctrl+`"]:
+                        suggestion_col = suggestions_row.column()
+                        suggestion_col.scale_y = 0.8
+                        suggestion_col.alignment = 'CENTER'
+                        suggestion_col.label(text=suggestion)
+
+            else:
+                # Elegant disabled state. chefs kiss
+                card_col.separator()
+
+                disabled_card = card_col.box()
+                disabled_card.enabled = False
+
+                disabled_row = disabled_card.row()
+                disabled_row.alignment = 'CENTER'
+                disabled_row.scale_y = 1.2
+                disabled_row.label(text="Enable popup panel to configure keyboard shortcut")
+
+                benefit_row = disabled_card.row()
+                benefit_row.alignment = 'CENTER'
+                benefit_row.scale_y = 0.8
+                benefit_row.label(text="Get instant access to Compify from any 3D viewport")
+
+        box = layout.box()
+        row = box.row()
+        row.prop(self, "show_ui_settings_section",
+                icon='TRIA_DOWN' if self.show_ui_settings_section else 'TRIA_RIGHT',
+                icon_only=True, emboss=False)
+        row.label(text="UI Settings", icon='PREFERENCES')
+
+        if self.show_ui_settings_section:
+            col = box.column()
+
+            # Panel Location Setting
+            location_box = col.box()
+            location_box.label(text="Panel Location", icon='SCREEN_BACK')
+
+            location_col = location_box.column()
+            location_col.prop(self, "panel_location", text="")
+
+            # Show current status
+            status_box = location_box.box()
+            status_col = status_box.column()
+            status_col.scale_y = 0.8
+
+            if self.panel_location == 'SCENE_PROPERTIES':
+                status_col.label(text="✓ Panel visible in Scene Properties only", icon='SCENE_DATA')
+            elif self.panel_location == 'N_PANEL':
+                status_col.label(text="✓ Panel visible in 3D Viewport N-Panel only", icon='VIEW3D')
+                status_col.label(text=f"  Tab: '{self.n_panel_category}'", icon='BLANK1')
+            elif self.panel_location == 'BOTH':
+                status_col.label(text="✓ Panel visible in both locations:", icon='CHECKMARK')
+                status_col.label(text="  • Scene Properties", icon='BLANK1')
+                status_col.label(text=f"  • N-Panel (Tab: '{self.n_panel_category}')", icon='BLANK1')
+            elif self.panel_location == 'NONE':
+                status_col.label(text="⚠ Panel hidden from all locations", icon='HIDE_ON')
+                status_col.label(text="  Only accessible via popup shortcut", icon='BLANK1')
+
+            # N-Panel Category setting (only show when relevant)
+            if self.panel_location in ['N_PANEL', 'BOTH']:
+                col.separator()
+                category_box = col.box()
+                category_box.label(text="N-Panel Tab Settings", icon='TOPBAR')
+                category_box.prop(self, "n_panel_category", text="Tab Name")
+
+                # Show helpful info
+                info_row = category_box.row()
+                info_row.scale_y = 0.8
+                info_row.label(text="💡 Tip: Change requires Blender restart to fully update", icon='INFO')
 
     def get_current_shortcut_display(self):
         if not self.shortcut_key_internal:
@@ -710,6 +1003,21 @@ class CompifyAddonPreferences(AddonPreferences):
             return "https://github.com/mdreece/compify/archive/refs/heads/master.zip"
 
 
+def update_panel_visibility(prefs, context):
+    """Update panel visibility when user changes settings"""
+    # This would ideally trigger a re-registration of panels
+    # But Blender doesn't easily support dynamic panel registration
+    # So we'll use the poll() method in panels to check preferences
+    # Fingers crossed
+
+    # Force a refresh of the UI
+    for area in context.screen.areas:
+        if area.type in ['PROPERTIES', 'VIEW_3D']:
+            area.tag_redraw()
+
+    print(f"Panel location changed to: {prefs.panel_location}")
+
+
 def get_compify_preferences():
     return bpy.context.preferences.addons[__package__].preferences
 
@@ -778,7 +1086,7 @@ def get_keymap_info():
 
 # Registration functions
 def register_preferences():
-    bpy.utils.register_class(CompifyPopupPanel)
+    bpy.utils.register_class(CompifyNPanelPanel)
     bpy.utils.register_class(CompifyOpenPopupOperator)
     bpy.utils.register_class(CompifyCheckUpdatesOperator)
     bpy.utils.register_class(CompifyInstallUpdateOperator)
@@ -807,7 +1115,7 @@ def unregister_preferences():
     bpy.utils.unregister_class(CompifyInstallUpdateOperator)
     bpy.utils.unregister_class(CompifyCheckUpdatesOperator)
     bpy.utils.unregister_class(CompifyOpenPopupOperator)
-    bpy.utils.unregister_class(CompifyPopupPanel)
+    bpy.utils.unregister_class(CompifyNPanelPanel)
 
     if hasattr(bpy.types.Scene, 'compify_keymap_items'):
         del bpy.types.Scene.compify_keymap_items

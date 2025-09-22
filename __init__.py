@@ -26,8 +26,8 @@
 #
 bl_info = {
     "name": "Compify",
-    "version": (0, 1, 6),
-    "author": "Nathan Vegdahl, Ian Hubert",
+    "version": (0, 1, 7),
+    "author": "Nathan Vegdahl, Ian Hubert, mr. robot",
     "blender": (4, 0, 0),
     "description": "Do compositing in 3D space with selective reflections.",
     "location": "Scene properties",
@@ -1511,7 +1511,14 @@ class CompifyPanel(bpy.types.Panel):
 
     @classmethod
     def poll(cls, context):
-        return True
+        # Check if user wants the panel in Scene Properties
+        try:
+            from .preferences import get_compify_preferences
+            prefs = get_compify_preferences()
+            return prefs.panel_location in ['SCENE_PROPERTIES', 'BOTH']
+        except:
+            # Fallback to True if preferences can't be accessed
+            return True
 
     def draw(self, context):
         wm = context.window_manager
@@ -1613,7 +1620,7 @@ class CompifyPanel(bpy.types.Panel):
             if config.selected_reflector_object_enum != 'NONE':
                 selected_obj_name = config.selected_reflector_object_enum
                 if selected_obj_name in bpy.data.objects:
-                    selected_obj = bpy.data.objects[selected_obj_name]
+                    selected_obj = bpy.data.objects[selected_obj_name]  # GET OBJECT FROM DROPDOWN, NOT ACTIVE OBJECT
 
                     # Ensure the object has reflection properties
                     if hasattr(selected_obj, 'compify_reflection'):
@@ -1649,7 +1656,7 @@ class CompifyPanel(bpy.types.Panel):
                                 make_reflective_op = make_reflective_row.operator("scene.compify_make_reflective_specific",
                                                                                 text="Make This Object Reflective",
                                                                                 icon='SHADING_RENDERED')
-                                make_reflective_op.object_name = selected_obj.name
+                                make_reflective_op.object_name = selected_obj.name  # PASS OBJECT NAME, NOT ACTIVE OBJECT
                             else:
                                 # HAS reflector material - show comprehensive settings
                                 settings_box.label(text="✅ Object is Reflective", icon='CHECKMARK')
@@ -1698,13 +1705,13 @@ class CompifyPanel(bpy.types.Panel):
                                             preset_row.label(text="Presets:")
                                             preset_op1 = preset_row.operator("scene.compify_texture_roughness_remap_preset", text="Linear")
                                             preset_op1.preset = 'LINEAR'
-                                            preset_op1.object_name = selected_obj.name
+                                            preset_op1.object_name = selected_obj.name  # PASS OBJECT NAME
                                             preset_op2 = preset_row.operator("scene.compify_texture_roughness_remap_preset", text="Invert")
                                             preset_op2.preset = 'INVERT'
-                                            preset_op2.object_name = selected_obj.name
+                                            preset_op2.object_name = selected_obj.name  # PASS OBJECT NAME
                                             preset_op3 = preset_row.operator("scene.compify_texture_roughness_remap_preset", text="Contrast")
                                             preset_op3.preset = 'CONTRAST'
-                                            preset_op3.object_name = selected_obj.name
+                                            preset_op3.object_name = selected_obj.name  # PASS OBJECT NAME
 
                                 elif selected_obj.compify_reflection.roughness_source == 'COMPIFY':
                                     # Using Compify footage - show collapsible ColorRamp section
@@ -1736,22 +1743,22 @@ class CompifyPanel(bpy.types.Panel):
                                         preset_row.label(text="Presets:")
                                         preset_op1 = preset_row.operator("scene.compify_roughness_remap_preset", text="Linear")
                                         preset_op1.preset = 'LINEAR'
-                                        preset_op1.object_name = selected_obj.name
+                                        preset_op1.object_name = selected_obj.name  # PASS OBJECT NAME
                                         preset_op2 = preset_row.operator("scene.compify_roughness_remap_preset", text="Invert")
                                         preset_op2.preset = 'INVERT'
-                                        preset_op2.object_name = selected_obj.name
+                                        preset_op2.object_name = selected_obj.name  # PASS OBJECT NAME
                                         preset_op3 = preset_row.operator("scene.compify_roughness_remap_preset", text="Contrast")
                                         preset_op3.preset = 'CONTRAST'
-                                        preset_op3.object_name = selected_obj.name
+                                        preset_op3.object_name = selected_obj.name  # PASS OBJECT NAME
 
-                                # Apply changes button
+                                # Apply changes button - CRITICAL FIX
                                 settings_box.separator()
                                 apply_row = settings_box.row()
                                 apply_row.scale_y = 1.2
                                 apply_op = apply_row.operator("scene.compify_force_update_reflector_specific",
                                                             text="Apply Changes",
                                                             icon='FILE_REFRESH')
-                                apply_op.object_name = selected_obj.name
+                                apply_op.object_name = selected_obj.name  # PASS THE DROPDOWN OBJECT NAME, NOT ACTIVE OBJECT
 
                                 # Remove reflector material button
                                 settings_box.separator()
@@ -1759,7 +1766,7 @@ class CompifyPanel(bpy.types.Panel):
                                 remove_op = remove_row.operator("scene.compify_remove_reflector_material",
                                                               text="Remove Reflector Material",
                                                               icon='X')
-                                remove_op.object_name = selected_obj.name
+                                remove_op.object_name = selected_obj.name  # PASS OBJECT NAME, NOT ACTIVE OBJECT
                     else:
                         error_box = reflector_select_box.box()
                         error_box.alert = True
@@ -1787,7 +1794,7 @@ class CompifyPanel(bpy.types.Panel):
                         make_reflector_op = make_reflector_row.operator("scene.compify_make_reflective_and_select",
                                                                       text="Make Active Object Reflective",
                                                                       icon='SHADING_RENDERED')
-                        make_reflector_op.object_name = context.active_object.name
+                        make_reflector_op.object_name = context.active_object.name  # This is OK - we want active object here
                 else:
                     # No object selected or not a mesh
                     help_box = reflector_select_box.box()
@@ -2469,14 +2476,11 @@ class CompifyMakeObjectReflect(bpy.types.Operator):
             self.report({'INFO'}, f"{obj.name} already in Reflected Geo collection")
             return {'FINISHED'}
 
-        # Remove from all collections first
         for coll in obj.users_collection:
             coll.objects.unlink(obj)
 
-        # Add to reflectees collection
         config.reflectees_collection.objects.link(obj)
 
-        # Make sure it's visible in reflections
         obj.visible_glossy = True
         if obj.type == 'LIGHT' and hasattr(obj.data, 'visible_glossy'):
             obj.data.visible_glossy = True
@@ -2486,7 +2490,6 @@ class CompifyMakeObjectReflect(bpy.types.Operator):
 
 
 class CompifyMakeHoldout(bpy.types.Operator):
-    """Make selected object a reflection holdout (INVISIBLE but blocks reflections)"""
     bl_idname = "scene.compify_make_holdout"
     bl_label = "Make Reflection Holdout"
     bl_options = {'UNDO'}
@@ -2498,46 +2501,34 @@ class CompifyMakeHoldout(bpy.types.Operator):
     def execute(self, context):
         original_obj = context.active_object
 
-        # Duplicate the object
         obj = original_obj.copy()
         obj.data = original_obj.data.copy()  #copy the mesh
 
-        # Rename the duplicate to include "holdout"
         if "holdout" not in obj.name.lower():
             obj.name = f"{original_obj.name}_holdout"
 
-        # Add the duplicate to the scene
         context.collection.objects.link(obj)
 
-        # Enable holdout mode
         obj.compify_reflection.reflection_holdout = True
 
-        # Apply the holdout material
         apply_reflection_holdout_material(obj, context)
 
-        # Ensure scene settings are correct
         setup_holdout_for_scene(context)
 
-        # Add to holdout collection if it exists, otherwise create it
         if not context.scene.compify_config.holdout_collection:
-            # Create the holdout collection if it doesn't exist
             collection = bpy.data.collections.new("Holdout Geo")
             context.scene.collection.children.link(collection)
             context.scene.compify_config.holdout_collection = collection
             self.report({'INFO'}, "Created Holdout Geo collection")
 
-        # Remove from the temporary collection it was added to
         context.collection.objects.unlink(obj)
 
-        # Add to holdout collection
         context.scene.compify_config.holdout_collection.objects.link(obj)
 
-        # Make sure it's NOT in the reflectees collection
         if context.scene.compify_config.reflectees_collection:
             if obj in context.scene.compify_config.reflectees_collection.objects[:]:
                 context.scene.compify_config.reflectees_collection.objects.unlink(obj)
 
-        # Select the new holdout object
         bpy.ops.object.select_all(action='DESELECT')
         obj.select_set(True)
         context.view_layer.objects.active = obj
@@ -2547,7 +2538,6 @@ class CompifyMakeHoldout(bpy.types.Operator):
 
 
 class CompifyRemoveHoldout(bpy.types.Operator):
-    """Remove holdout object (deletes the holdout duplicate)"""
     bl_idname = "scene.compify_remove_holdout"
     bl_label = "Remove Holdout"
     bl_options = {'UNDO'}
@@ -2561,22 +2551,17 @@ class CompifyRemoveHoldout(bpy.types.Operator):
     def execute(self, context):
         obj = context.active_object
 
-        # Store the object name for the report
         obj_name = obj.name
 
-        # Remove holdout material
         remove_reflection_holdout_material(obj, context)
 
-        # Remove from holdout collection
         if context.scene.compify_config.holdout_collection:
             if obj in context.scene.compify_config.holdout_collection.objects[:]:
                 context.scene.compify_config.holdout_collection.objects.unlink(obj)
 
-        # Delete the holdout object entirely (since it's a duplicate)
         mesh_data = obj.data
         bpy.data.objects.remove(obj, do_unlink=True)
 
-        # Also remove the mesh data if it has no other users
         if mesh_data.users == 0:
             bpy.data.meshes.remove(mesh_data)
 
@@ -2585,7 +2570,6 @@ class CompifyRemoveHoldout(bpy.types.Operator):
 
 
 class CompifyMakeReflectiveSpecific(bpy.types.Operator):
-    """Make specific object reflective"""
     bl_idname = "scene.compify_make_reflective_specific"
     bl_label = "Make Object Reflective"
     bl_options = {'UNDO'}
@@ -2599,26 +2583,20 @@ class CompifyMakeReflectiveSpecific(bpy.types.Operator):
 
         obj = bpy.data.objects[self.object_name]
 
-        # Use the existing make reflective logic but for specific object
         scene = context.scene
         config = scene.compify_config
 
-        # Get or create base material
         base_material = ensure_compify_material(context)
 
-        # Create and apply reflector material
         reflector_material_name = f"{base_material.name}_Reflector_{obj.name}"
 
-        # Remove old if exists
         if reflector_material_name in bpy.data.materials:
             old_mat = bpy.data.materials[reflector_material_name]
             bpy.data.materials.remove(old_mat)
 
-        # Create new
         reflector_material = base_material.copy()
         reflector_material.name = reflector_material_name
 
-        # Apply to object
         obj.data.materials.clear()
         obj.data.materials.append(reflector_material)
 
@@ -2641,7 +2619,6 @@ class CompifyMakeReflectiveSpecific(bpy.types.Operator):
 
 
 class CompifyForceUpdateReflectorSpecific(bpy.types.Operator):
-    """Force update specific reflector material"""
     bl_idname = "scene.compify_force_update_reflector_specific"
     bl_label = "Force Update Reflector"
     bl_options = {'UNDO'}
@@ -2655,7 +2632,6 @@ class CompifyForceUpdateReflectorSpecific(bpy.types.Operator):
 
         obj = bpy.data.objects[self.object_name]
 
-        # Find the reflector material
         reflector_material = None
         for mat in obj.data.materials:
             if mat and "_Reflector_" in mat.name:
@@ -2666,12 +2642,10 @@ class CompifyForceUpdateReflectorSpecific(bpy.types.Operator):
             self.report({'ERROR'}, "No reflector material found")
             return {'CANCELLED'}
 
-        # Get settings from the object's properties
         obj_strength = obj.compify_reflection.reflection_strength
         obj_metallic = obj.compify_reflection.reflection_metallic
         obj_roughness = obj.compify_reflection.reflection_roughness
 
-        # Update the material
         modify_compify_material_for_reflection(
             reflector_material,
             obj_metallic,
@@ -2684,7 +2658,6 @@ class CompifyForceUpdateReflectorSpecific(bpy.types.Operator):
         self.report({'INFO'}, f"Updated {obj.name} reflection settings")
         return {'FINISHED'}
 
-
 class CompifyRemoveReflectorMaterial(bpy.types.Operator):
     """Remove reflector material from specific object"""
     bl_idname = "scene.compify_remove_reflector_material"
@@ -2692,9 +2665,6 @@ class CompifyRemoveReflectorMaterial(bpy.types.Operator):
     bl_options = {'UNDO'}
 
     object_name: bpy.props.StringProperty()
-
-    def invoke(self, context, event):
-        return context.window_manager.invoke_confirm(self, event)
 
     def execute(self, context):
         if self.object_name not in bpy.data.objects:
@@ -3043,3 +3013,4 @@ if __name__ == "__main__":
 
 
 #wuttup scrubs <3
+#fsociety
