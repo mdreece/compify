@@ -3,13 +3,13 @@
 ## [0.1.7] - 2025-09-22
 
 ### General improvements
-- UI Settings allow choosing where the Compify Panel appears (N-Panel, Scene Prop, Both, None (use popuppanel))
+- 'UI Settings' added to preferences to choose where Compify panel shows (viewport, scene prop, both, none (use popup panel))
+- Popup panel UI rearranged to make a bit more sense I hope. 
 
 ### Fixes
- - Reflective objects 'apply' was applying to objects it shouldnt have. Now only applies to the selected object in the dropdown.
+ - Reflective Objects 'apply' should now only apply to the object in the dropdown
 
 -------------------------------------------------------------------------------
-
 
 ## [0.1.6] - 2025-09-21
 
