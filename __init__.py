@@ -254,28 +254,25 @@ class BakerWithReflections:
         self.is_done = False
 
 def update_reflection_holdout(self, context):
-    """Update object to be a reflection holdout (blocks reflections but invisible)"""
-    obj = context.object
+    obj = self.id_data
     if not obj:
         return
 
     if obj.compify_reflection.reflection_holdout:
-        # Enable glossy visibility so it blocks reflections
         obj.visible_glossy = True
         if obj.type == 'LIGHT' and hasattr(obj.data, 'visible_glossy'):
             obj.data.visible_glossy = True
 
-        # Apply holdout material if it's a mesh
         if obj.type == 'MESH':
             apply_reflection_holdout_material(obj, context)
     else:
-        # Remove holdout material if it exists
         if obj.type == 'MESH':
             remove_reflection_holdout_material(obj, context)
 
 
 def update_reflector_material_properties(self, context):
-    obj = context.object
+    obj = self.id_data
+
     if not obj or obj.type != 'MESH' or not hasattr(obj, 'compify_reflection'):
         return
 
@@ -285,33 +282,25 @@ def update_reflector_material_properties(self, context):
 
     reflector_material_name = f"{compify_material.name}_Reflector_{obj.name}"
 
-    reflector_material = None
     if reflector_material_name in bpy.data.materials:
         reflector_material = bpy.data.materials[reflector_material_name]
-    else:
-        print(f"Auto-creating reflector material for {obj.name}")
-        reflector_material = compify_material.copy()
-        reflector_material.name = reflector_material_name
 
-        if not obj.data.materials or obj.data.materials[0] != reflector_material:
-            obj.data.materials.clear()
-            obj.data.materials.append(reflector_material)
+        blend_mode = context.scene.compify_config.reflection_blend_mode
 
-    blend_mode = context.scene.compify_config.reflection_blend_mode
+        modify_compify_material_for_reflection(
+            reflector_material,
+            obj.compify_reflection.reflection_metallic,
+            obj.compify_reflection.reflection_roughness,
+            obj.compify_reflection.reflection_strength,
+            blend_mode,
+            obj
+        )
 
-    modify_compify_material_for_reflection(
-        reflector_material,
-        obj.compify_reflection.reflection_metallic,
-        obj.compify_reflection.reflection_roughness,
-        obj.compify_reflection.reflection_strength,
-        blend_mode,
-        obj
-    )
+        print(f"Auto-updated reflector material for {obj.name} (not active object)")
 
 
 def update_reflection_visibility(self, context):
-    """Update reflection visibility when object settings change"""
-    obj = context.object
+    obj = self.id_data
     if not obj:
         return
 
