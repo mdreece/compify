@@ -20,14 +20,6 @@ class CompifyNPanelPanel(bpy.types.Panel):
 
         layout = self.layout
 
-        header_box = layout.box()
-        header_row = header_box.row()
-        header_row.alignment = 'CENTER'
-        header_row.scale_y = 0.8
-        header_row.label(text="3D Viewport Panel", icon='VIEW3D')
-
-        layout.separator(factor=0.3)
-
         # Use the main CompifyPanel's draw method
         CompifyPanel.draw(self, context)
 
@@ -445,7 +437,7 @@ class CompifyAddonPreferences(AddonPreferences):
     def draw(self, context):
         layout = self.layout
 
-        # Updates & Information section (closed by default)
+        # Updates & Information
         box = layout.box()
         row = box.row()
         row.prop(self, "show_updates_info_section",
@@ -456,145 +448,168 @@ class CompifyAddonPreferences(AddonPreferences):
         if self.show_updates_info_section:
             col = box.column()
 
+            # Channel selector with better styling
             channel_box = col.box()
-            channel_box.label(text="Version Channel", icon='PREFERENCES')
-
-            channel_row = channel_box.row()
+            channel_row = channel_box.row(align=True)
+            channel_row.label(text="Version:", icon='PREFERENCES')
             channel_row.prop(self, "update_channel", text="")
 
-            info_box = col.box()
-
-            header_row = info_box.row()
-            header_row.alignment = 'CENTER'
-            if self.update_channel == 'UNOFFICIAL':
-                header_row.label(text="Unofficial Version - Latest Features", icon='EXPERIMENTAL')
-            else:
-                header_row.label(text="Official Version - Stable Release", icon='BOOKMARKS')
-
-            info_box.separator()
-
-            # Ian's Patreon! SUPPORT !!! lol
-            patreon_box = info_box.box()
-            patreon_header = patreon_box.row()
-            patreon_header.scale_y = 1.1
-            patreon_btn = patreon_header.operator("wm.url_open", text="❤️  Support Ian Hubert on Patreon", icon='FUND')
-            patreon_btn.url = "https://www.patreon.com/IanHubert"
-
-            patreon_desc = patreon_box.row()
-            patreon_desc.alignment = 'CENTER'
-            patreon_desc.scale_y = 0.8
-            patreon_desc.label(text="Thank you for funding Compify's development!", icon='NONE')
-
-            info_box.separator(factor=0.5)
-
-            links_col = info_box.column(align=True)
-
-            if self.update_channel == 'UNOFFICIAL':
-                unofficial_row = links_col.row(align=True)
-                unofficial_row.scale_y = 1.0
-                unofficial_btn = unofficial_row.operator("wm.url_open", text="🔗  Unofficial Repository & Docs", icon='URL')
-                unofficial_btn.url = "https://github.com/mdreece/compify"
-
-                info_box.separator(factor=0.3)
-                desc_col = info_box.column()
-                desc_col.scale_y = 0.7
-                desc_col.alignment = 'CENTER'
-
-                desc_row1 = desc_col.row()
-                desc_row1.alignment = 'CENTER'
-                desc_row1.label(text="🔗 Enhanced features & latest fixes from unofficial repository")
-
-                # Features list
-                features_box = info_box.box()
-                features_box.label(text="Unofficial Enhancements:", icon='PLUS')
-                feature_col = features_box.column()
-                feature_col.scale_y = 0.8
-                feature_col.label(text="• Enhanced reflection system with selective control", icon='BLANK1')
-                feature_col.label(text="• Improved material handling and ColorRamp preservation", icon='BLANK1')
-                feature_col.label(text="• Better UI and user experience improvements", icon='BLANK1')
-                feature_col.label(text="• Blender 4.3-5.0 compatibility updates", icon='BLANK1')
-
-            else:
-                official_row = links_col.row(align=True)
-                official_row.scale_y = 1.0
-                official_btn = official_row.operator("wm.url_open", text="📚  Official Repository & Documentation", icon='HELP')
-                official_btn.url = "https://github.com/EatTheFuture/compify"
-
-                info_box.separator(factor=0.3)
-                desc_col = info_box.column()
-                desc_col.scale_y = 0.7
-                desc_col.alignment = 'CENTER'
-
-                desc_row1 = desc_col.row()
-                desc_row1.alignment = 'CENTER'
-                desc_row1.label(text="📚 Official stable version with original feature set")
-
-                warning_box = info_box.box()
-                warning_box.alert = True
-                warning_box.label(text="⚠️ Note: Official version lacks unofficial enhancements", icon='ERROR')
-                missing_col = warning_box.column()
-                missing_col.scale_y = 0.8
-                missing_col.label(text="• No enhanced reflection system", icon='BLANK1')
-                missing_col.label(text="• Basic material handling only", icon='BLANK1')
-                missing_col.label(text="• Limited UI improvements", icon='BLANK1')
-
-                install_box = info_box.box()
-                install_box.label(text="Switch to Official Version:", icon='IMPORT')
-                install_row = install_box.row()
-                install_row.scale_y = 1.2
-                install_op = install_row.operator("compify.install_update", text="Install Official Version", icon='PACKAGE')
-                install_op.url = "https://github.com/EatTheFuture/compify/archive/refs/heads/master.zip"
-                install_op.is_official = True
-
-            info_box.separator(factor=0.3)
-            version_row = info_box.row()
-            version_row.alignment = 'CENTER'
+            # Current version info
+            version_row = channel_box.row()
             version_row.scale_y = 0.8
+            version_row.alignment = 'CENTER'
+            try:
+                from . import bl_info
+                current_version = bl_info['version']
+                version_str = f"v{current_version[0]}.{current_version[1]}.{current_version[2]}"
+            except:
+                version_str = "Unknown"
+
             if self.update_channel == 'UNOFFICIAL':
-                version_row.label(text="Compify - Unofficial Edition", icon='EXPERIMENTAL')
+                version_row.label(text=f"Current: {version_str} (Unofficial)", icon='EXPERIMENTAL')
             else:
-                version_row.label(text="Compify - Official Stable Version", icon='CHECKMARK')
+                version_row.label(text=f"Current: {version_str} (Official)", icon='CHECKMARK')
+
+            col.separator(factor=0.5)
+
+            content_box = col.box()
+
+            if self.update_channel == 'UNOFFICIAL':
+
+                # Features grid
+                features_grid = content_box.grid_flow(row_major=True, columns=2, even_columns=True, even_rows=False, align=True)
+                features_grid.scale_y = 0.9
+
+                # Left column
+                left_col = features_grid.column()
+                feat_box1 = left_col.box()
+                feat_box1.label(text="🔧 Enhanced Features", icon='NONE')
+                feat_col1 = feat_box1.column(align=True)
+                feat_col1.scale_y = 0.8
+                feat_col1.label(text="• Advanced Reflections")
+                feat_col1.label(text="• Selective Visibility")
+                feat_col1.label(text="• Holdout Materials")
+
+                # Right column
+                right_col = features_grid.column()
+                feat_box2 = right_col.box()
+                feat_box2.label(text="🎨 UI Improvements", icon='NONE')
+                feat_col2 = feat_box2.column(align=True)
+                feat_col2.scale_y = 0.8
+                feat_col2.label(text="• Options Location")
+                feat_col2.label(text="• Popup Panel")
+                feat_col2.label(text="• Blender 4.0-5.0 Ready")
+
+                content_box.separator(factor=0.5)
+
+                # Repository link
+                link_row = content_box.row()
+                link_row.scale_y = 1.1
+                link_btn = link_row.operator("wm.url_open", text="View on GitHub", icon='URL')
+                link_btn.url = "https://github.com/mdreece/compify"
+
+            else:
+                # Official channel content
+                header_row = content_box.row()
+                header_row.alignment = 'CENTER'
+                header_row.label(text="📚 Official Stable Version", icon='NONE')
+
+                content_box.separator(factor=0.5)
+
+                # Official description
+                desc_box = content_box.box()
+                desc_col = desc_box.column()
+                desc_col.scale_y = 0.9
+                desc_col.label(text="The original Compify by Nathan Vegdahl and Ian Hubert", icon='NONE')
+                desc_col.label(text="Stable and production-ready")
+                desc_col.separator(factor=0.3)
+                desc_col.label(text="Basic features only - no unofficial enhancements")
+
+                content_box.separator(factor=0.5)
+
+                # Repository link
+                link_row = content_box.row()
+                link_row.scale_y = 1.1
+                link_btn = link_row.operator("wm.url_open", text="View Official Repository", icon='URL')
+                link_btn.url = "https://github.com/EatTheFuture/compify"
+
+                # Switch to official warning
+                if self.update_channel == 'OFFICIAL':
+                    content_box.separator()
+                    switch_box = content_box.box()
+                    switch_box.alert = True
+                    switch_col = switch_box.column()
+                    switch_col.scale_y = 0.9
+                    switch_col.label(text="⚠️ Switching removes unofficial features", icon='ERROR')
+
+                    switch_row = switch_box.row()
+                    switch_row.scale_y = 1.1
+                    switch_op = switch_row.operator("compify.install_update",
+                                                text="Install Official Version",
+                                                icon='IMPORT')
+                    switch_op.url = "https://github.com/EatTheFuture/compify/archive/refs/heads/master.zip"
+                    switch_op.is_official = True
 
             col.separator()
-            update_box = col.box()
-            update_box.label(text="Update Checking", icon='FILE_REFRESH')
 
-            check_row = update_box.row()
-            check_row.scale_y = 1.2
+            # Patreon support - more subtle placement
+            support_box = col.box()
+            support_row = support_box.row()
+            support_row.alignment = 'CENTER'
+            support_btn = support_row.operator("wm.url_open",
+                                            text="❤️ Support Ian on Patreon",
+                                            icon='FUND')
+            support_btn.url = "https://www.patreon.com/IanHubert"
+
+            support_info = support_box.row()
+            support_info.alignment = 'CENTER'
+            support_info.scale_y = 0.7
+            support_info.label(text="Help fund this magical creature")
+
+            col.separator()
+
             if self.update_channel == 'UNOFFICIAL':
-                check_row.operator("compify.check_updates", text="Check for Unofficial Updates", icon='EXPERIMENTAL')
-            else:
-                check_row.operator("compify.check_updates", text="Check for Official Updates", icon='FILE_REFRESH')
+                update_box = col.box()
+                update_header = update_box.row()
+                update_header.label(text="Check for Updates", icon='FILE_REFRESH')
 
-            if self.update_status:
-                status_box = update_box.box()
+                check_row = update_box.row()
+                check_row.scale_y = 1.2
+                check_btn = check_row.operator("compify.check_updates",
+                                            text="Check for Updates",
+                                            icon='EXPERIMENTAL')
 
-                if self.update_available:
-                    status_box.alert = False
+                if self.update_status == "AVAILABLE" and self.update_available:
+                    update_box.separator()
+                    status_box = update_box.box()
                     status_row = status_box.row()
-                    status_row.label(text=f"✅ Update Available: {self.latest_version}", icon='CHECKMARK')
+                    status_row.alert = False
+                    status_row.label(text=f"✅ Version {self.latest_version} available!", icon='CHECKMARK')
 
-                    if self.update_channel == 'OFFICIAL':
-                        warning_box = status_box.box()
-                        warning_box.alert = True
-                        warning_box.label(text="⚠️ Warning: Switching to Official Version", icon='ERROR')
-                        warning_box.label(text="This will remove unofficial features you currently have!", icon='BLANK1')
-
-                    # Install button
                     install_row = status_box.row()
-                    install_row.scale_y = 1.3
-                    install_op = install_row.operator("compify.install_update", text="Install Update", icon='IMPORT')
+                    install_row.scale_y = 1.2
+                    install_op = install_row.operator("compify.install_update",
+                                                    text="Install Update",
+                                                    icon='IMPORT')
                     install_op.url = self.get_download_url()
-                    install_op.is_official = (self.update_channel == 'OFFICIAL')
+                    install_op.is_official = False
 
-                else:
-                    status_box.label(text="✅ You have the latest version!", icon='CHECKMARK')
+                elif self.update_status == "UP_TO_DATE":
+                    update_box.separator()
+                    status_row = update_box.row()
+                    status_row.alignment = 'CENTER'
+                    status_row.scale_y = 0.9
+                    status_row.label(text="✅ You have the latest version", icon='CHECKMARK')
 
-            elif self.update_status == "ERROR":
-                error_box = update_box.box()
-                error_box.alert = True
-                error_box.label(text="❌ Failed to check for updates", icon='ERROR')
-                error_box.label(text="Check your internet connection", icon='BLANK1')
+                elif self.update_status == "ERROR":
+                    update_box.separator()
+                    error_box = update_box.box()
+                    error_box.alert = True
+                    error_row = error_box.row()
+                    error_row.label(text="Failed to check updates", icon='ERROR')
+                    error_row2 = error_box.row()
+                    error_row2.scale_y = 0.8
+                    error_row2.label(text="Check internet connection")
 
         box = layout.box()
         row = box.row()
