@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.1.7] - 2025-09-22
+## [0.1.7 - 8] - 2025-09-22
 
 ### General improvements
 - 'UI Settings' added to preferences to choose where Compify panel shows (viewport, scene prop, both, none (use popup panel))
@@ -8,6 +8,7 @@
 
 ### Fixes
  - Reflective Objects 'apply' should now only apply to the object in the dropdown
+ - Preferences being cleared post installing updates
 
 -------------------------------------------------------------------------------
 
