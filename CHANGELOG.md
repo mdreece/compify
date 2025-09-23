@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.1.9] - 2025-09-23
+
+### General improvements
+ - Updates and infromation UI improved...again.
+
+### Fixes
+ - Preferences being cleared post installing updates - options are now retained
+
+-------------------------------------------------------------------------------
+
 ## [0.1.7 - 8] - 2025-09-22
 
 ### General improvements
