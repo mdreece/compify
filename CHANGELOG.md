@@ -8,7 +8,7 @@
 
 ### Fixes
  - Reflective Objects 'apply' should now only apply to the object in the dropdown
- - Preferences being cleared post installing updates
+ - Preferences being cleared post installing updates - options are now retained
 
 -------------------------------------------------------------------------------
 
