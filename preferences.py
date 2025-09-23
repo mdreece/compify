@@ -147,6 +147,7 @@ class CompifyInstallUpdateOperator(bpy.types.Operator):
             col.label(text="This will:")
             col.label(text="• Update to latest unofficial version", icon='CHECKMARK')
             col.label(text="• Keep all enhanced features", icon='CHECKMARK')
+            col.label(text="• Preserve your settings", icon='CHECKMARK')
             col.label(text="• Require Blender restart", icon='INFO')
 
         col.separator()
@@ -160,13 +161,12 @@ class CompifyInstallUpdateOperator(bpy.types.Operator):
         import tempfile
 
         try:
-            # Get addon directory
+            # Get directory
             addon_dir = os.path.dirname(os.path.realpath(__file__))
-            parent_dir = os.path.dirname(addon_dir)
 
-            # Create temporary directory
+            # Create temp directory
             with tempfile.TemporaryDirectory() as temp_dir:
-                # Download zip file
+                # Download zip
                 zip_path = os.path.join(temp_dir, "compify.zip")
 
                 self.report({'INFO'}, "Downloading update...")
@@ -177,7 +177,7 @@ class CompifyInstallUpdateOperator(bpy.types.Operator):
                 with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                     zip_ref.extractall(extract_path)
 
-                # Find the compify folder in extracted files
+                # Find the folder in extracted files
                 compify_folder = None
                 for item in os.listdir(extract_path):
                     item_path = os.path.join(extract_path, item)
@@ -189,12 +189,22 @@ class CompifyInstallUpdateOperator(bpy.types.Operator):
                     self.report({'ERROR'}, "Could not find compify folder in download")
                     return {'CANCELLED'}
 
-                # Remove old addon directory
-                if os.path.exists(addon_dir):
-                    shutil.rmtree(addon_dir)
+                # UPDATE FILES IN PLACE - DON'T DELETE THE DIRECTORY!
+                # my dumbass kept wondering where my shortcut key was going. herp and derp people.
+                for root, dirs, files in os.walk(compify_folder):
+                    # Get relative path from compify_folder
+                    rel_dir = os.path.relpath(root, compify_folder)
+                    dest_dir = addon_dir if rel_dir == '.' else os.path.join(addon_dir, rel_dir)
 
-                # Copy new files
-                shutil.copytree(compify_folder, addon_dir)
+                    # Create subdirectories if they don't exist
+                    if not os.path.exists(dest_dir):
+                        os.makedirs(dest_dir)
+
+                    # Copy files
+                    for file in files:
+                        src_file = os.path.join(root, file)
+                        dest_file = os.path.join(dest_dir, file)
+                        shutil.copy2(src_file, dest_file)
 
                 self.report({'INFO'}, "Update installed successfully!")
                 self.report({'WARNING'}, "Please restart Blender to complete the update")
@@ -1134,3 +1144,6 @@ def unregister_preferences():
 
     if hasattr(bpy.types.Scene, 'compify_keymap_items'):
         del bpy.types.Scene.compify_keymap_items
+
+#wuttup scrubs <3
+#fsociety
