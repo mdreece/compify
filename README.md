@@ -175,8 +175,8 @@ Reflection controls include:
 
 ## 🧰 Requirements
 
-- **Blender 4.0.0 or later**  
-  (Tested from Blender **v4.2.0** to **v5.0.0**)
+- **Blender Tested 4.0.0, 4.2.0(12), 4.3.2, 4.5.0, 5.0.0**  
+  
 
 ---
 
