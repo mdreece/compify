@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.2.0] - 2025-09-28
+
+### General improvements
+ - 'Feather and Dilate' of compify node now on panel
+ - 'Mesh Tools' added to collections section: this has normals recalculations
+ - Reflection buttons don't show until related collections are created
+ - Message about output settings when attempting to render from panel
+ - Tested in 4.0.0, 4.2.0(12), 4.3.2, 4.4.3, 4.5.0, 5.0.0
+
+-------------------------------------------------------------------------------
+
 ## [0.1.9] - 2025-09-23
 
 ### General improvements
