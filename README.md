@@ -185,12 +185,12 @@ This fork expands the original Compify with **quality-of-life improvements** and
 
 Tools for compositing **reflections** directly into your scenes.
 
-- **Reflective Geo**  
-  Loads as its own collection.  
-  → Add objects that *reflect* the ones above.
+- **Reflective Geo**
+  Loads into `Footage Geo` collection.  
+  → Add objects that are *reflective* 
 
 - **Reflected Geo**  
-  Loads into `Footage Geo` collection.  
+  Loads into as its own collection 
   → Add objects that *should be reflected* in the scene.
 
 - **Holdout Geo**  
