@@ -59,28 +59,30 @@ This is a shot I took and recreated by tracking and then extruding with the wond
 
 ### Wireframe
 
-<img width="796" height="454" src="https://github.com/user-attachments/assets/b2f9fd4b-1042-461c-b4bb-158d7ed1c02e" alt="Wireframe View" />
+<img width="846" height="478" alt="Screenshot_20250928_142005" src="https://github.com/user-attachments/assets/2017b2a4-c9c6-4c0b-9b6a-dbcfccb4838a" />
 
 
 ### Solid View
 
-<img width="798" height="451" src="https://github.com/user-attachments/assets/54186a4e-e5cf-4476-882a-57edfdb82a3d" alt="Solid View" />
+<img width="848" height="479" alt="Screenshot_20250928_142033" src="https://github.com/user-attachments/assets/aaed7926-5bbd-4e12-b830-8679daeb6220" />
 
+### Rendered View
+
+<img width="847" height="482" alt="Screenshot_20250928_142821" src="https://github.com/user-attachments/assets/10c1e287-4e74-4658-8ea3-6cfc30c46d29" />
 
 ---
 
 ### 1. Open Compify Panel
 
-Access the Compify menu in the **Scene Properties** (or set a popup panel shortcut in preferences).
+Access the Compify menu in the **Scene Properties** (or popup panel/UI location).
 
-<img width="482" height="269" src="https://github.com/user-attachments/assets/546e58e4-c5e5-4229-8e0c-5c3c326cfe2f" alt="Compify Panel UI" />
+<img width="477" height="211" alt="Screenshot_20250928_142150" src="https://github.com/user-attachments/assets/ab829664-866d-484c-8a06-27bc08e267d9" />
 
 ---
 
 ### 2. Footage Settings
 
-<img width="436" height="131" src="https://github.com/user-attachments/assets/05ebcd71-82bf-42aa-9069-0308ca8a198a" alt="Footage Settings" />
-
+<img width="428" height="133" alt="Screenshot_20250928_142344" src="https://github.com/user-attachments/assets/2a9a11fb-89c6-47a4-ae7a-12b1756c0ebc" />
 
 - Select your **footage** from where it is saved.
 - Choose the **color space** for your selected footage.
@@ -90,22 +92,25 @@ Access the Compify menu in the **Scene Properties** (or set a popup panel shortc
 
 ### 3. Collections Setup
 
-<img width="429" height="87" alt="Screenshot_20250920_171315" src="https://github.com/user-attachments/assets/50cb6fbb-3812-484a-a453-262962d416b3" />
+<img width="424" height="128" alt="Screenshot_20250928_142426" src="https://github.com/user-attachments/assets/8494a130-ad31-4427-a285-949b45111860" />
 
 - Use the `+` next to **Footage Geo** to create the collection.
   - Add objects/geometry that the footage will be projected onto.
 - Use the `+` next to **Footage Lights** to create the collection.
   - Add recreated lights here (HDRI/World is handled separately).
-(Reset Material option for if there are issues)
+ 
+  - Mesh Tools: Recalculate inside/outside normals.
+  - Material reset: Clear Compify material from selected object.
 
 <img width="174" height="42" alt="Screenshot_20250920_165812" src="https://github.com/user-attachments/assets/bbf9f9ae-8ff5-447f-bbe2-159afcb2212a" />
 
 - Click **Prep Scene** → then **Bake Footage Lighting**
 
-<img width="438" height="87" src="https://github.com/user-attachments/assets/4e40f38d-01ff-4788-80e6-a41dbb9e2ca8" alt="Bake Lighting UI" />
+<img width="389" height="36" alt="Screenshot_20250928_142646" src="https://github.com/user-attachments/assets/30f67531-2fa3-4101-aa0d-09845548e5d7" />
 
 
-<img width="797" height="455" alt="Screenshot_20250920_170604" src="https://github.com/user-attachments/assets/868f2cc2-9082-4ca5-9ebc-6f153fb62066" />
+<img width="844" height="479" alt="Screenshot_20250928_142920" src="https://github.com/user-attachments/assets/cac4cde2-5f1b-4512-963d-72c278f7847e" />
+
 
 ---
 
@@ -113,7 +118,7 @@ Access the Compify menu in the **Scene Properties** (or set a popup panel shortc
 
 ### 4. Reflections
 
-<img width="428" height="228" alt="Screenshot_20250920_165214" src="https://github.com/user-attachments/assets/7095c9e2-143e-4fef-8c15-acb0be35c05a" />
+<img width="422" height="149" alt="Screenshot_20250928_143001" src="https://github.com/user-attachments/assets/8fe489b4-e079-4e0d-9359-0ee562f1625e" />
 
 - Use the '+' next to **Reflective Geo** to create the collection (will be in Footage Geo)
   - Add objects/geo that is going to be a reflective surface
