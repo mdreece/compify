@@ -156,6 +156,7 @@ Access the Compify menu in the **Scene Properties** (or popup panel/UI location)
 
 <img width="412" height="63" alt="Screenshot_20250928_145353" src="https://github.com/user-attachments/assets/88f04d3f-039b-4ded-be99-1b9918d8b39c" />
 
+---
     
 - Click **Prep Scene** → then **Bake Footage Lighting**
 
