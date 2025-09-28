@@ -99,10 +99,14 @@ Access the Compify menu in the **Scene Properties** (or popup panel/UI location)
 - Use the `+` next to **Footage Lights** to create the collection.
   - Add recreated lights here (HDRI/World is handled separately).
 
+- Mesh Tools: Recalculate inside/outside normals.
+
 <img width="414" height="153" alt="Screenshot_20250928_145650" src="https://github.com/user-attachments/assets/d1d8f01e-6aec-46c6-b9a0-d810287a8e3c" />
 
-- Mesh Tools: Recalculate inside/outside normals.
 - Material reset: Clear Compify material from selected object.
+
+<img width="422" height="90" alt="Screenshot_20250928_145810" src="https://github.com/user-attachments/assets/9ab73464-ce82-49a0-919f-8907bc0483b3" />
+
 
 <img width="174" height="42" alt="Screenshot_20250920_165812" src="https://github.com/user-attachments/assets/bbf9f9ae-8ff5-447f-bbe2-159afcb2212a" />
 
