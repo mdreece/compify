@@ -188,8 +188,7 @@ See [LICENSE.md](./LICENSE.md) for full details.
 ---
 
 ## 🤝 Contributing
-
-Although **Nathan** and **Ian** are not accepting contributions to the official version,  
+  
 I'm very open to feedback and collaboration on this fork!
 
 > I love this tool and keep thinking of new features almost weekly.  
