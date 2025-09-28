@@ -48,7 +48,7 @@ https://github.com/EatTheFuture/compify
 
 ---
 
-##  How to Use
+##  HOW TO USE
 
 The moderate expectation is that you have recreated your scene in some way for the Compify process to work with.
 - Shoot your footage
