@@ -107,6 +107,7 @@ Access the Compify menu in the **Scene Properties** (or popup panel/UI location)
 
 <img width="422" height="90" alt="Screenshot_20250928_145810" src="https://github.com/user-attachments/assets/9ab73464-ce82-49a0-919f-8907bc0483b3" />
 
+---
 
 <img width="174" height="42" alt="Screenshot_20250920_165812" src="https://github.com/user-attachments/assets/bbf9f9ae-8ff5-447f-bbe2-159afcb2212a" />
 
