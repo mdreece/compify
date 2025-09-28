@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.1] - 2025-09-28
+
+### General improvements
+ - Corrected icon issue keeping full output window from appearing.
+ - Updated icons to reflect correctly (IE: object = object, reflection = reflect, holdout = holdout)
+ - Tested in 4.0.0, 4.2.0(12), 4.3.2, 4.4.3, 4.5.0, 5.0.0
+
+-------------------------------------------------------------------------------
+
 ## [0.2.0] - 2025-09-28
 
 ### General improvements
