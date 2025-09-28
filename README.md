@@ -54,6 +54,7 @@ The moderate expectation is that you have recreated your scene in some way for t
 - Shoot your footage
 - Track your footage
 - Recreate the geometry of your footage (be sure to recalculate normals in mesh tools if needed)
+- 
 This is a shot I took and recreated by tracking and then extruding with the wonderful default cube (lol).
 
 ### Wireframe
