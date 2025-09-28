@@ -22,11 +22,13 @@
 # Update options for Official and Unofficial githubs
 # Reflections/reflective materials can now be set
 # Holdouts for reflections
+# Added Feather/Dilate controls for reflectors from Compify node tree
+# Added Mesh Tools section with normals recalculation for footage geo
 #
 #
 bl_info = {
     "name": "Compify",
-    "version": (0, 1, 9),
+    "version": (0, 2, 0),
     "author": "Nathan Vegdahl, Ian Hubert, mr. robot",
     "blender": (4, 0, 0),
     "description": "Do compositing in 3D space with selective reflections.",
@@ -253,6 +255,7 @@ class BakerWithReflections:
         self.is_baking = False
         self.is_done = False
 
+
 def update_reflection_holdout(self, context):
     obj = self.id_data
     if not obj:
@@ -317,6 +320,34 @@ def update_reflection_visibility(self, context):
         print(f"Updated {obj.type.lower()} {obj.name}: visible_glossy = {obj.compify_reflection.visible_in_reflections}")
 
 
+def update_feather_dilate(self, context):
+    """Update feather and dilate values for the selected reflector"""
+    obj = self.id_data
+    if not obj or obj.type != 'MESH':
+        return
+
+    # Find the reflector material
+    reflector_material = None
+    for mat in obj.data.materials:
+        if mat and "_Reflector_" in mat.name:
+            reflector_material = mat
+            break
+
+    if not reflector_material or not reflector_material.node_tree:
+        return
+
+    # Find the Feathered Square node
+    for node in reflector_material.node_tree.nodes:
+        if node.name == "Feathered Square" and node.type == 'GROUP':
+            # Update the feather and dilate values
+            if "Feather" in node.inputs:
+                node.inputs["Feather"].default_value = obj.compify_reflection.feather
+            if "Dilate" in node.inputs:
+                node.inputs["Dilate"].default_value = obj.compify_reflection.dilate
+            print(f"Updated Feather/Dilate for {obj.name}: F={obj.compify_reflection.feather}, D={obj.compify_reflection.dilate}")
+            break
+
+
 def change_footage_material_clip(config, context):
     if config.footage == None:
         return
@@ -334,6 +365,46 @@ def change_footage_camera(config, context):
     if mat != None:
         group = ensure_camera_project_group(config.camera)
         mat.node_tree.nodes["Camera Project"].node_tree = group
+
+
+def get_footage_geo_objects_enum(self, context):
+    """Generate enum items for objects in footage geo, reflective, and holdout collections"""
+    items = [('NONE', "Select Object...", "Choose an object to edit", 'OBJECT_DATA', 0)]
+
+    if not hasattr(context.scene, 'compify_config'):
+        return items
+
+    config = context.scene.compify_config
+
+    # Collect all unique mesh objects from all three collections
+    all_objects = {}  # Use dict to avoid duplicates
+
+    # Add objects from Footage Geo collection
+    if config.geo_collection:
+        for obj in config.geo_collection.objects:
+            if obj.type == 'MESH' and obj.name not in all_objects:
+                all_objects[obj.name] = ('OUTLINER_COLLECTION', "Footage Geo")
+
+    # Add objects from Reflective Geo collection
+    if config.reflectors_collection:
+        for obj in config.reflectors_collection.objects:
+            if obj.type == 'MESH' and obj.name not in all_objects:
+                all_objects[obj.name] = ('SHADING_RENDERED', "Reflective Geo")
+
+    # Add objects from Holdout Geo collection
+    if config.holdout_collection:
+        for obj in config.holdout_collection.objects:
+            if obj.type == 'MESH' and obj.name not in all_objects:
+                all_objects[obj.name] = ('HOLDOUT_ON', "Holdout Geo")
+
+    # Create enum items with collection indicators
+    for i, (obj_name, (icon, collection_name)) in enumerate(sorted(all_objects.items())):
+        description = f"Edit {obj_name} (from {collection_name})"
+        items.append((obj_name, obj_name, description, icon, i + 1))
+
+    return items
+
+
 
 def apply_reflection_holdout_material(obj, context):
     """Apply a material that is COMPLETELY INVISIBLE to camera but occludes in reflections"""
@@ -1240,6 +1311,29 @@ class CompifyReflectionProperties(bpy.types.PropertyGroup):
         update=update_reflector_material_properties
     )
 
+    show_edge_controls: bpy.props.BoolProperty(
+        name="Show Edge Controls",
+        description="Toggle visibility of edge control settings",
+        default=False
+    )
+    feather: bpy.props.FloatProperty(
+        name="Feather",
+        description="Feather amount for the footage edge",
+        default=0.05,
+        min=0.0,
+        max=1.0,
+        update=update_feather_dilate
+    )
+
+    dilate: bpy.props.FloatProperty(
+        name="Dilate",
+        description="Dilate/erode the footage edge",
+        default=0.0,
+        min=-0.1,
+        max=0.1,
+        update=update_feather_dilate
+    )
+
     show_roughness_remap: bpy.props.BoolProperty(
         name="Show Roughness Remap",
         description="Show/hide roughness remapping controls",
@@ -1351,6 +1445,13 @@ class CompifyFootageConfig(bpy.types.PropertyGroup):
         update=lambda self, context: update_selected_reflector(self, context)
     )
 
+    # Mesh Tools properties
+    selected_mesh_object_enum: bpy.props.EnumProperty(
+        name="Select Mesh Object",
+        description="Choose a mesh object from Footage Geo collection to edit",
+        items=get_footage_geo_objects_enum
+    )
+
     bake_uv_margin: bpy.props.IntProperty(
         name="Bake UV Margin",
         subtype='PIXEL',
@@ -1390,6 +1491,11 @@ class CompifyFootageConfig(bpy.types.PropertyGroup):
         name="Show Baking Section",
         default=False,
         description="Toggle baking settings section visibility"
+    )
+    show_mesh_tools_section: bpy.props.BoolProperty(
+        name="Show Mesh Tools Section",
+        default=False,
+        description="Toggle mesh tools section visibility"
     )
 
 def update_selected_reflector(self, context):
@@ -1490,377 +1596,88 @@ class CompifyMakeReflectiveAndSelect(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class CompifyPanel(bpy.types.Panel):
-    """Composite in 3D space."""
-    bl_label = "Compify"
-    bl_idname = "DATA_PT_compify"
-    bl_space_type = 'PROPERTIES'
-    bl_region_type = 'WINDOW'
-    bl_context = "scene"
+class CompifyRecalculateNormals(bpy.types.Operator):
+    """Recalculate normals for selected mesh object"""
+    bl_idname = "scene.compify_recalculate_normals"
+    bl_label = "Recalculate Normals"
+    bl_options = {'UNDO'}
+
+    inside: bpy.props.BoolProperty(
+        name="Inside",
+        description="Calculate normals pointing inward",
+        default=False
+    )
+
+    object_name: bpy.props.StringProperty(
+        name="Object Name",
+        description="Name of the object to recalculate normals for",
+        default=""
+    )
 
     @classmethod
     def poll(cls, context):
-        # Check if user wants the panel in Scene Properties
+        # Basic poll to ensure we're in object mode
+        return context.mode == 'OBJECT'
+
+    def execute(self, context):
+        if not self.object_name:
+            self.report({'ERROR'}, "No object name specified")
+            return {'CANCELLED'}
+
+        if self.object_name not in bpy.data.objects:
+            self.report({'ERROR'}, f"Object '{self.object_name}' not found")
+            return {'CANCELLED'}
+
+        obj = bpy.data.objects[self.object_name]
+
+        if obj.type != 'MESH':
+            self.report({'ERROR'}, f"Object '{self.object_name}' is not a mesh")
+            return {'CANCELLED'}
+
+        # Store current state
+        prev_active = context.view_layer.objects.active
+        prev_selected = [o for o in context.selected_objects]
+        prev_mode = context.mode
+
         try:
-            from .preferences import get_compify_preferences
-            prefs = get_compify_preferences()
-            return prefs.panel_location in ['SCENE_PROPERTIES', 'BOTH']
-        except:
-            # Fallback to True if preferences can't be accessed
-            return True
+            # Clear selection and make target object active
+            bpy.ops.object.select_all(action='DESELECT')
+            context.view_layer.objects.active = obj
+            obj.select_set(True)
 
-    def draw(self, context):
-        wm = context.window_manager
-        layout = self.layout
+            # Switch to edit mode
+            bpy.ops.object.mode_set(mode='EDIT')
 
-        # Safety check for compify_config
-        if not hasattr(context.scene, 'compify_config'):
-            layout.label(text="Compify not properly initialized. Please restart Blender.")
-            return
+            # Select all geometry
+            bpy.ops.mesh.select_all(action='SELECT')
 
-        config = context.scene.compify_config
+            # Recalculate normals
+            bpy.ops.mesh.normals_make_consistent(inside=self.inside)
 
-        box = layout.box()
-        row = box.row()
-        row.prop(config, "show_footage_section",
-                icon='TRIA_DOWN' if config.show_footage_section else 'TRIA_RIGHT',
-                icon_only=True, emboss=False)
-        row.label(text="Footage", icon='IMAGE_DATA')
+            # Return to object mode
+            bpy.ops.object.mode_set(mode='OBJECT')
 
-        if config.show_footage_section:
-            col = box.column()
-            col.template_ID(config, "footage", open="image.open")
-            col.use_property_split = True
-            if config.footage != None:
-                col.prop(config.footage, "source")
-                col.prop(config.footage.colorspace_settings, "name", text="Color Space")
+        except Exception as e:
+            self.report({'ERROR'}, f"Failed to recalculate normals: {str(e)}")
+            # Try to return to object mode if we're stuck in edit mode
+            try:
+                bpy.ops.object.mode_set(mode='OBJECT')
+            except:
+                pass
+            return {'CANCELLED'}
 
-            # Camera selection
-            col.prop(config, "camera", text="Camera")
+        finally:
+            # Restore previous selection state
+            bpy.ops.object.select_all(action='DESELECT')
+            for o in prev_selected:
+                if o.name in bpy.data.objects:
+                    bpy.data.objects[o.name].select_set(True)
+            if prev_active and prev_active.name in bpy.data.objects:
+                context.view_layer.objects.active = prev_active
 
-        box = layout.box()
-        row = box.row()
-        row.prop(config, "show_collections_section",
-                icon='TRIA_DOWN' if config.show_collections_section else 'TRIA_RIGHT',
-                icon_only=True, emboss=False)
-        row.label(text="Collections", icon='OUTLINER_COLLECTION')
-
-        # Check if active object has a compify material and show reset button if so
-        if context.active_object and context.active_object.type == 'MESH':
-            has_compify_mat = False
-            if context.active_object.data.materials:
-                for mat in context.active_object.data.materials:
-                    if mat and (mat.name == compify_mat_name(context) or "_Reflector_" in mat.name):
-                        has_compify_mat = True
-                        break
-
-            if has_compify_mat:
-                row.operator("material.compify_reset_material", text="", icon='FILE_REFRESH')
-
-        if config.show_collections_section:
-            col = box.column()
-            col.use_property_split = True
-
-            # Footage Geo Collection
-            row1 = col.row()
-            row1.prop(config, "geo_collection", text="Footage Geo")
-            row1.operator("scene.compify_add_footage_geo_collection", text="", icon='ADD')
-
-            # Footage Lights Collection
-            row2 = col.row()
-            row2.prop(config, "lights_collection", text="Footage Lights")
-            row2.operator("scene.compify_add_footage_lights_collection", text="", icon='ADD')
-
-        box = layout.box()
-        row = box.row()
-        row.prop(config, "show_reflections_section",
-                icon='TRIA_DOWN' if config.show_reflections_section else 'TRIA_RIGHT',
-                icon_only=True, emboss=False)
-        row.label(text="Reflections", icon='SHADING_RENDERED')
-
-        if config.show_reflections_section:
-            col = box.column()
-            col.use_property_split = True
-
-            # Reflective Geo Collection
-            row3 = col.row()
-            row3.prop(config, "reflectors_collection", text="Reflective Geo")
-            row3.operator("scene.compify_add_reflectors_collection", text="", icon='ADD')
-
-            # Reflected Geo Collection
-            row4 = col.row()
-            row4.prop(config, "reflectees_collection", text="Reflected Geo")
-            row4.operator("scene.compify_add_reflectees_collection", text="", icon='ADD')
-
-            # Holdout Geo Collection
-            row5 = col.row()
-            row5.prop(config, "holdout_collection", text="Holdout Geo")
-            row5.operator("scene.compify_add_holdout_collection", text="", icon='ADD')
-
-            col.separator()
-            reflector_select_box = col.box()
-            reflector_select_box.label(text="Individual Reflector Settings", icon='SETTINGS')
-
-            # Object selector dropdown
-            selector_row = reflector_select_box.row()
-            selector_row.prop(config, "selected_reflector_object_enum", text="Object")
-
-            # Show settings for selected reflector object OR add new reflector button
-            if config.selected_reflector_object_enum != 'NONE':
-                selected_obj_name = config.selected_reflector_object_enum
-                if selected_obj_name in bpy.data.objects:
-                    selected_obj = bpy.data.objects[selected_obj_name]  # GET OBJECT FROM DROPDOWN, NOT ACTIVE OBJECT
-
-                    # Ensure the object has reflection properties
-                    if hasattr(selected_obj, 'compify_reflection'):
-                        settings_box = reflector_select_box.box()
-
-                        # Collapsible header for settings
-                        header_row = settings_box.row()
-                        header_row.prop(selected_obj.compify_reflection, "show_object_settings",
-                                       icon='TRIA_DOWN' if selected_obj.compify_reflection.show_object_settings else 'TRIA_RIGHT',
-                                       icon_only=True, emboss=False)
-                        header_row.label(text=f"Settings for: {selected_obj.name}", icon='OBJECT_DATA')
-
-                        # Only show settings if expanded
-                        if selected_obj.compify_reflection.show_object_settings:
-                            # Check if object has reflector material
-                            has_reflector_mat = False
-                            reflector_mat = None
-                            if selected_obj.data.materials:
-                                for mat in selected_obj.data.materials:
-                                    if mat and "_Reflector_" in mat.name:
-                                        has_reflector_mat = True
-                                        reflector_mat = mat
-                                        break
-
-                            if not has_reflector_mat:
-                                # No reflector material - show button to create one
-                                warning_box = settings_box.box()
-                                warning_box.alert = True
-                                warning_box.label(text="⚠️ Object needs reflector material", icon='ERROR')
-
-                                make_reflective_row = settings_box.row()
-                                make_reflective_row.scale_y = 1.3
-                                make_reflective_op = make_reflective_row.operator("scene.compify_make_reflective_specific",
-                                                                                text="Make This Object Reflective",
-                                                                                icon='SHADING_RENDERED')
-                                make_reflective_op.object_name = selected_obj.name  # PASS OBJECT NAME, NOT ACTIVE OBJECT
-                            else:
-                                # HAS reflector material - show comprehensive settings
-                                settings_box.label(text="✅ Object is Reflective", icon='CHECKMARK')
-                                settings_box.separator()
-
-                                # Main reflection properties
-                                settings_box.prop(selected_obj.compify_reflection, "reflection_strength", text="Strength", slider=True)
-
-                                # Roughness source selector
-                                settings_box.prop(selected_obj.compify_reflection, "roughness_source", text="Roughness")
-
-                                # Show appropriate roughness control based on source
-                                if selected_obj.compify_reflection.roughness_source == 'VALUE':
-                                    settings_box.prop(selected_obj.compify_reflection, "reflection_roughness", text="Roughness Value", slider=True)
-
-                                elif selected_obj.compify_reflection.roughness_source == 'TEXTURE':
-                                    settings_box.template_ID(selected_obj.compify_reflection, "roughness_texture", open="image.open")
-
-                                    # Add ColorRamp section for texture roughness
-                                    if selected_obj.compify_reflection.roughness_texture:
-                                        remap_box = settings_box.box()
-                                        remap_row = remap_box.row()
-                                        remap_row.prop(selected_obj.compify_reflection, "show_texture_roughness_remap",
-                                                      icon='TRIA_DOWN' if selected_obj.compify_reflection.show_texture_roughness_remap else 'TRIA_RIGHT',
-                                                      icon_only=True, emboss=False)
-                                        remap_row.label(text="Texture Roughness Remap", icon='FCURVE')
-
-                                        if selected_obj.compify_reflection.show_texture_roughness_remap:
-                                            # Find the ColorRamp node if it exists
-                                            ramp_node = None
-                                            if reflector_mat and reflector_mat.node_tree:
-                                                for node in reflector_mat.node_tree.nodes:
-                                                    if node.name == "Compify_Texture_Roughness_Remap" and node.type == 'VALTORGB':
-                                                        ramp_node = node
-                                                        break
-
-                                            if ramp_node:
-                                                # Show the actual ColorRamp widget
-                                                remap_box.template_color_ramp(ramp_node, "color_ramp", expand=True)
-                                            else:
-                                                remap_box.label(text="Apply changes to create remap", icon='INFO')
-
-                                            # Quick presets
-                                            remap_box.separator()
-                                            preset_row = remap_box.row(align=True)
-                                            preset_row.label(text="Presets:")
-                                            preset_op1 = preset_row.operator("scene.compify_texture_roughness_remap_preset", text="Linear")
-                                            preset_op1.preset = 'LINEAR'
-                                            preset_op1.object_name = selected_obj.name  # PASS OBJECT NAME
-                                            preset_op2 = preset_row.operator("scene.compify_texture_roughness_remap_preset", text="Invert")
-                                            preset_op2.preset = 'INVERT'
-                                            preset_op2.object_name = selected_obj.name  # PASS OBJECT NAME
-                                            preset_op3 = preset_row.operator("scene.compify_texture_roughness_remap_preset", text="Contrast")
-                                            preset_op3.preset = 'CONTRAST'
-                                            preset_op3.object_name = selected_obj.name  # PASS OBJECT NAME
-
-                                elif selected_obj.compify_reflection.roughness_source == 'COMPIFY':
-                                    # Using Compify footage - show collapsible ColorRamp section
-                                    remap_box = settings_box.box()
-                                    remap_row = remap_box.row()
-                                    remap_row.prop(selected_obj.compify_reflection, "show_roughness_remap",
-                                                  icon='TRIA_DOWN' if selected_obj.compify_reflection.show_roughness_remap else 'TRIA_RIGHT',
-                                                  icon_only=True, emboss=False)
-                                    remap_row.label(text="Roughness Remap", icon='FCURVE')
-
-                                    if selected_obj.compify_reflection.show_roughness_remap:
-                                        # Find the ColorRamp node if it exists
-                                        ramp_node = None
-                                        if reflector_mat and reflector_mat.node_tree:
-                                            for node in reflector_mat.node_tree.nodes:
-                                                if node.name == "Compify_Roughness_Remap" and node.type == 'VALTORGB':
-                                                    ramp_node = node
-                                                    break
-
-                                        if ramp_node:
-                                            # Show the actual ColorRamp widget
-                                            remap_box.template_color_ramp(ramp_node, "color_ramp", expand=True)
-                                        else:
-                                            remap_box.label(text="Apply changes to create remap", icon='INFO')
-
-                                        # Quick presets
-                                        remap_box.separator()
-                                        preset_row = remap_box.row(align=True)
-                                        preset_row.label(text="Presets:")
-                                        preset_op1 = preset_row.operator("scene.compify_roughness_remap_preset", text="Linear")
-                                        preset_op1.preset = 'LINEAR'
-                                        preset_op1.object_name = selected_obj.name  # PASS OBJECT NAME
-                                        preset_op2 = preset_row.operator("scene.compify_roughness_remap_preset", text="Invert")
-                                        preset_op2.preset = 'INVERT'
-                                        preset_op2.object_name = selected_obj.name  # PASS OBJECT NAME
-                                        preset_op3 = preset_row.operator("scene.compify_roughness_remap_preset", text="Contrast")
-                                        preset_op3.preset = 'CONTRAST'
-                                        preset_op3.object_name = selected_obj.name  # PASS OBJECT NAME
-
-                                # Apply changes button - CRITICAL FIX
-                                settings_box.separator()
-                                apply_row = settings_box.row()
-                                apply_row.scale_y = 1.2
-                                apply_op = apply_row.operator("scene.compify_force_update_reflector_specific",
-                                                            text="Apply Changes",
-                                                            icon='FILE_REFRESH')
-                                apply_op.object_name = selected_obj.name  # PASS THE DROPDOWN OBJECT NAME, NOT ACTIVE OBJECT
-
-                                # Remove reflector material button
-                                settings_box.separator()
-                                remove_row = settings_box.row()
-                                remove_op = remove_row.operator("scene.compify_remove_reflector_material",
-                                                              text="Remove Reflector Material",
-                                                              icon='X')
-                                remove_op.object_name = selected_obj.name  # PASS OBJECT NAME, NOT ACTIVE OBJECT
-                    else:
-                        error_box = reflector_select_box.box()
-                        error_box.alert = True
-                        error_box.label(text="Selected object missing reflection properties", icon='ERROR')
-            else:
-                # No object selected - show add current object button or help text
-                if context.active_object and context.active_object.type == 'MESH':
-                    # Show button to make the active object reflective
-                    add_box = reflector_select_box.box()
-                    add_box.label(text=f"Active Object: {context.active_object.name}", icon='OBJECT_DATA')
-
-                    # Check if already in reflectors collection
-                    is_already_reflector = False
-                    if config.reflectors_collection:
-                        is_already_reflector = context.active_object in config.reflectors_collection.objects[:]
-
-                    if is_already_reflector:
-                        add_box.label(text="✅ Already in Reflective Geo collection", icon='CHECKMARK')
-                        # Set it as selected in dropdown
-                        help_row = add_box.row()
-                        help_row.label(text="Use dropdown above to edit settings", icon='INFO')
-                    else:
-                        make_reflector_row = add_box.row()
-                        make_reflector_row.scale_y = 1.3
-                        make_reflector_op = make_reflector_row.operator("scene.compify_make_reflective_and_select",
-                                                                      text="Make Active Object Reflective",
-                                                                      icon='SHADING_RENDERED')
-                        make_reflector_op.object_name = context.active_object.name  # This is OK - we want active object here
-                else:
-                    # No object selected or not a mesh
-                    help_box = reflector_select_box.box()
-                    if context.active_object:
-                        help_box.label(text=f"Active object '{context.active_object.name}' is not a mesh", icon='INFO')
-                    else:
-                        help_box.label(text="Select a mesh object to make it reflective", icon='INFO')
-
-            if context.active_object:
-                obj = context.active_object
-                col.separator()
-                quick_actions_box = col.box()
-                quick_actions_box.label(text=f"Quick Actions: {obj.name}", icon='OBJECT_DATA')
-
-                # Check if object is in reflectees collection
-                is_in_reflectees = False
-                if config.reflectees_collection:
-                    for collection_obj in config.reflectees_collection.objects:
-                        if collection_obj == obj:
-                            is_in_reflectees = True
-                            break
-
-                # Check if object is holdout
-                if hasattr(obj, 'compify_reflection') and obj.compify_reflection.reflection_holdout:
-                    quick_actions_box.label(text="✅ Object is a Reflection Holdout", icon='HOLDOUT_ON')
-                    quick_actions_box.label(text="(Blocks reflections but invisible)", icon='INFO')
-
-                    # Option to remove holdout
-                    row = quick_actions_box.row()
-                    row.operator("scene.compify_remove_holdout",
-                                text="Remove Holdout",
-                                icon='X')
-                elif is_in_reflectees:
-                    quick_actions_box.label(text="✅ Object is in Reflected Geo collection", icon='CHECKMARK')
-                else:
-                    # Show options for making object visible or holdout
-                    col_options = quick_actions_box.column(align=True)
-                    col_options.operator("scene.compify_make_object_reflect",
-                                        text="Make Object Visible in Reflections",
-                                        icon='HIDE_OFF')
-
-                    # Show holdout button for mesh objects
-                    if obj.type == 'MESH':
-                        col_options.operator("scene.compify_make_holdout",
-                                            text="Make Reflection Holdout",
-                                            icon='HOLDOUT_OFF')
-
-        box = layout.box()
-        row = box.row()
-        row.prop(config, "show_baking_section",
-                icon='TRIA_DOWN' if config.show_baking_section else 'TRIA_RIGHT',
-                icon_only=True, emboss=False)
-        row.label(text="Baking Settings", icon='RENDER_STILL')
-
-        if config.show_baking_section:
-            col = box.column()
-            col.use_property_split = True
-            col.prop(config, "bake_uv_margin")
-            col.prop(config, "bake_image_res")
-
-        layout.separator(factor=1.0)
-
-        # Main actions with preferences button
-        main_row = layout.row()
-
-        # Main action buttons column
-        col = main_row.column(align=True)
-        col.scale_y = 1.3
-        col.operator("material.compify_prep_scene", icon='SCENE_DATA')
-        col.operator("material.compify_bake", icon='RENDER_STILL')
-        col.operator("render.compify_render", icon='RENDER_ANIMATION')
-
-        # Preferences button (gear icon only)
-        prefs_col = main_row.column()
-        prefs_col.scale_x = 1.3
-        prefs_col.scale_y = 1.3
-        prefs_col.operator("preferences.addon_show", text="", icon='PREFERENCES').module = __package__
+        direction = "inward" if self.inside else "outward"
+        self.report({'INFO'}, f"Recalculated normals {direction} for {obj.name}")
+        return {'FINISHED'}
 
 
 class CompifyCameraPanel(bpy.types.Panel):
@@ -1883,6 +1700,29 @@ class CompifyCameraPanel(bpy.types.Panel):
         col.operator("material.compify_camera_project_new")
 
 
+class CompifyResetFeatherDilate(bpy.types.Operator):
+    """Reset feather and dilate to default values"""
+    bl_idname = "scene.compify_reset_feather_dilate"
+    bl_label = "Reset Feather/Dilate"
+    bl_options = {'UNDO'}
+
+    object_name: bpy.props.StringProperty()
+
+    def execute(self, context):
+        if self.object_name not in bpy.data.objects:
+            self.report({'ERROR'}, f"Object {self.object_name} not found")
+            return {'CANCELLED'}
+
+        obj = bpy.data.objects[self.object_name]
+
+        # Reset to defaults
+        obj.compify_reflection.reflection_feather = 0.05
+        obj.compify_reflection.reflection_dilate = 0.0
+
+        self.report({'INFO'}, f"Reset feather/dilate for {obj.name}")
+        return {'FINISHED'}
+
+
 class CompifyResetMaterial(bpy.types.Operator):
     """Reset the Compify material on the selected object"""
     bl_idname = "material.compify_reset_material"
@@ -1894,10 +1734,12 @@ class CompifyResetMaterial(bpy.types.Operator):
         if not context.active_object or context.active_object.type != 'MESH':
             return False
 
-        # Check if object has a compify-related material
+        # Check if object has a compify-related material (including holdout materials)
         if context.active_object.data.materials:
             for mat in context.active_object.data.materials:
-                if mat and (mat.name == compify_mat_name(context) or "_Reflector_" in mat.name):
+                if mat and (mat.name == compify_mat_name(context) or
+                          "_Reflector_" in mat.name or
+                          "Compify_Reflection_Holdout" in mat.name):  # Added holdout check
                     return True
         return False
 
@@ -1923,17 +1765,34 @@ class CompifyResetMaterial(bpy.types.Operator):
         if obj.data.materials:
             for mat in obj.data.materials:
                 if mat:
-                    if "_Reflector_" in mat.name or mat.name == compify_mat_name(context):
+                    # Include holdout materials in the removal
+                    if ("_Reflector_" in mat.name or
+                        mat.name == compify_mat_name(context) or
+                        "Compify_Reflection_Holdout" in mat.name):
                         materials_to_remove.append(mat)
 
-
+        # Clear all materials from the object
         obj.data.materials.clear()
 
+        # Delete the material data blocks if no other users
         for mat in materials_to_remove:
             if mat.users == 0:
                 mat_name = mat.name
                 bpy.data.materials.remove(mat)
                 print(f"Deleted material: {mat_name}")
+
+        # Reset holdout properties if they exist
+        if hasattr(obj, 'compify_reflection'):
+            obj.compify_reflection.reflection_holdout = False
+
+        # Reset visibility settings that might have been modified for holdouts
+        obj.visible_camera = True
+        obj.visible_diffuse = True
+        obj.visible_glossy = True
+        obj.visible_transmission = True
+        obj.visible_volume_scatter = True
+        obj.visible_shadow = True
+        obj.is_holdout = False
 
         self.report({'INFO'}, f"Cleared all Compify materials from {obj.name}")
 
@@ -2181,6 +2040,66 @@ class CompifyRender(bpy.types.Operator):
             and len(context.scene.compify_config.geo_collection.all_objects) > 0 \
             and compify_mat_name(context) in bpy.data.materials
 
+    def invoke(self, context, event):
+        """Show confirmation dialog before starting render"""
+        return context.window_manager.invoke_props_dialog(self, width=400)
+
+    def draw(self, context):
+        """Draw the confirmation dialog"""
+        layout = self.layout
+
+        # Title
+        col = layout.column()
+        col.label(text="Render Settings Check", icon='RENDER_ANIMATION')
+        col.separator()
+
+        # Current settings display
+        settings_box = col.box()
+        settings_col = settings_box.column(align=True)
+        settings_col.label(text="Current Output Settings:", icon='SETTINGS')
+        settings_col.separator(factor=0.5)
+
+        # Show current output path
+        output_row = settings_col.row()
+        output_row.label(text="Output:", icon='FILE_FOLDER')
+        output_path = context.scene.render.filepath
+        if output_path:
+            output_row.label(text=output_path)
+        else:
+            output_row.label(text="Not Set!", icon='ERROR')
+
+        # Show format
+        format_row = settings_col.row()
+        format_row.label(text="Format:", icon='IMAGE_DATA')
+        format_row.label(text=context.scene.render.image_settings.file_format)
+
+        # Show resolution
+        res_row = settings_col.row()
+        res_row.label(text="Resolution:", icon='FULLSCREEN')
+        res_row.label(text=f"{context.scene.render.resolution_x} x {context.scene.render.resolution_y}")
+
+        # Show frame range
+        frame_row = settings_col.row()
+        frame_row.label(text="Frames:", icon='TIME')
+        frame_row.label(text=f"{context.scene.frame_start} - {context.scene.frame_end}")
+
+        col.separator()
+
+        # Warning if no output path
+        if not output_path:
+            warning_box = col.box()
+            warning_box.alert = True
+            warning_col = warning_box.column()
+            warning_col.label(text="⚠️ No output path set!", icon='ERROR')
+            warning_col.label(text="Your renders won't be saved!")
+
+        # Confirmation question
+        col.separator()
+        question_box = col.box()
+        question_col = question_box.column()
+        question_col.label(text="Have you configured your output settings?", icon='QUESTION')
+        question_col.label(text="Click OK to start rendering, or Cancel to adjust settings.", icon='INFO')
+
     def render_post_callback(self, scene, context=None):
         self.render_done = True
 
@@ -2188,6 +2107,7 @@ class CompifyRender(bpy.types.Operator):
         self.is_cancelled = True
 
     def execute(self, context):
+        """Start the actual rendering process"""
         self.render_started = False
         self.render_done = False
         self.frame_range = (context.scene.frame_start, context.scene.frame_end)
@@ -2205,6 +2125,9 @@ class CompifyRender(bpy.types.Operator):
         context.window_manager.modal_handler_add(self)
 
         context.scene.frame_set(self.frame_range[0])
+
+        # Report that rendering has started
+        self.report({'INFO'}, f"Starting Compify render: frames {self.frame_range[0]} to {self.frame_range[1]}")
 
         return {'RUNNING_MODAL'}
 
@@ -2247,6 +2170,7 @@ class CompifyRender(bpy.types.Operator):
 
                     if context.scene.frame_current >= self.frame_range[1]:
                         self.is_finished = True
+                        self.report({'INFO'}, "Compify render completed successfully!")
                     else:
                         context.scene.frame_set(context.scene.frame_current + 1)
                         self.render_started = False
@@ -2684,7 +2608,6 @@ class CompifyRemoveReflectorMaterial(bpy.types.Operator):
         self.report({'INFO'}, f"Removed reflector material from {obj.name}")
         return {'FINISHED'}
 
-
 class CompifyForceUpdateReflector(bpy.types.Operator):
     """Force update reflector material with current settings"""
     bl_idname = "scene.compify_force_update_reflector"
@@ -2910,93 +2833,605 @@ class CompifyTextureRoughnessRemapPreset(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class CompifyPanel(bpy.types.Panel):
+    """Composite in 3D space."""
+    bl_label = "Compify"
+    bl_idname = "DATA_PT_compify"
+    bl_space_type = 'PROPERTIES'
+    bl_region_type = 'WINDOW'
+    bl_context = "scene"
+
+    @classmethod
+    def poll(cls, context):
+        # Check if user wants the panel in Scene Properties
+        try:
+            from .preferences import get_compify_preferences
+            prefs = get_compify_preferences()
+            return prefs.panel_location in ['SCENE_PROPERTIES', 'BOTH']
+        except:
+            # Fallback to True if preferences can't be accessed
+            return True
+
+    def draw(self, context):
+        wm = context.window_manager
+        layout = self.layout
+
+        # Safety check for compify_config
+        if not hasattr(context.scene, 'compify_config'):
+            layout.label(text="Compify not properly initialized. Please restart Blender.")
+            return
+
+        config = context.scene.compify_config
+
+        box = layout.box()
+        row = box.row()
+        row.prop(config, "show_footage_section",
+                icon='TRIA_DOWN' if config.show_footage_section else 'TRIA_RIGHT',
+                icon_only=True, emboss=False)
+        row.label(text="Footage", icon='IMAGE_DATA')
+
+        if config.show_footage_section:
+            col = box.column()
+            col.template_ID(config, "footage", open="image.open")
+            col.use_property_split = True
+            if config.footage != None:
+                col.prop(config.footage, "source")
+                col.prop(config.footage.colorspace_settings, "name", text="Color Space")
+
+            # Camera selection
+            col.prop(config, "camera", text="Camera")
+
+        box = layout.box()
+        row = box.row()
+        row.prop(config, "show_collections_section",
+                icon='TRIA_DOWN' if config.show_collections_section else 'TRIA_RIGHT',
+                icon_only=True, emboss=False)
+        row.label(text="Collections", icon='OUTLINER_COLLECTION')
+
+        # Check if active object has a compify material and show reset button if so
+        if context.active_object and context.active_object.type == 'MESH':
+            has_compify_mat = False
+            if context.active_object.data.materials:
+                for mat in context.active_object.data.materials:
+                    if mat and (mat.name == compify_mat_name(context) or "_Reflector_" in mat.name):
+                        has_compify_mat = True
+                        break
+
+            if has_compify_mat:
+                row.operator("material.compify_reset_material", text="", icon='FILE_REFRESH')
+
+        if config.show_collections_section:
+            col = box.column()
+            col.use_property_split = True
+
+            # Footage Geo Collection
+            row1 = col.row()
+            row1.prop(config, "geo_collection", text="Footage Geo")
+            row1.operator("scene.compify_add_footage_geo_collection", text="", icon='ADD')
+
+            # Footage Lights Collection
+            row2 = col.row()
+            row2.prop(config, "lights_collection", text="Footage Lights")
+            row2.operator("scene.compify_add_footage_lights_collection", text="", icon='ADD')
+
+            # Mesh Tools subsection
+            col.separator()
+            mesh_tools_box = col.box()
+            mesh_tools_row = mesh_tools_box.row()
+            mesh_tools_row.prop(config, "show_mesh_tools_section",
+                    icon='TRIA_DOWN' if config.show_mesh_tools_section else 'TRIA_RIGHT',
+                    icon_only=True, emboss=False)
+            mesh_tools_row.label(text="Mesh Tools", icon='MESH_DATA')
+
+            # Only show if at least one collection exists
+            has_collections = (config.geo_collection or
+                             config.reflectors_collection or
+                             config.holdout_collection)
+
+            if config.show_mesh_tools_section and has_collections:
+                mesh_tools_col = mesh_tools_box.column()
+
+                # Object selector dropdown
+                mesh_tools_col.prop(config, "selected_mesh_object_enum", text="Object")
+
+                if config.selected_mesh_object_enum != 'NONE':
+                    if config.selected_mesh_object_enum in bpy.data.objects:
+                        selected_obj = bpy.data.objects[config.selected_mesh_object_enum]
+
+                        # Determine which collection the object is from
+                        collection_name = "Unknown"
+                        collection_icon = 'OBJECT_DATA'
+
+                        if config.geo_collection and selected_obj in config.geo_collection.objects[:]:
+                            collection_name = "Footage Geo"
+                            collection_icon = 'OUTLINER_COLLECTION'
+                        elif config.reflectors_collection and selected_obj in config.reflectors_collection.objects[:]:
+                            collection_name = "Reflective Geo"
+                            collection_icon = 'SHADING_RENDERED'
+                        elif config.holdout_collection and selected_obj in config.holdout_collection.objects[:]:
+                            collection_name = "Holdout Geo"
+                            collection_icon = 'HOLDOUT_ON'
+
+                        tools_box = mesh_tools_col.box()
+                        header_row = tools_box.row()
+                        header_row.label(text=f"Tools for: {selected_obj.name}", icon='OBJECT_DATA')
+                        header_row.label(text=f"({collection_name})", icon=collection_icon)
+
+                        # Normals section
+                        normals_row = tools_box.row()
+                        normals_row.label(text="Normals:", icon='NORMALS_FACE')
+
+                        normals_buttons = tools_box.row(align=True)
+
+                        # Check if operator exists before trying to use it
+                        if hasattr(bpy.ops.scene, 'compify_recalculate_normals'):
+                            # Recalculate Outside button
+                            op_out = normals_buttons.operator("scene.compify_recalculate_normals",
+                                                             text="Recalculate Outside")
+                            if op_out is not None:
+                                op_out.object_name = selected_obj.name
+                                op_out.inside = False
+
+                            # Recalculate Inside button
+                            op_in = normals_buttons.operator("scene.compify_recalculate_normals",
+                                                            text="Recalculate Inside")
+                            if op_in is not None:
+                                op_in.object_name = selected_obj.name
+                                op_in.inside = True
+                        else:
+                            # Fallback if operator isn't registered
+                            normals_buttons.label(text="Normals operator not available", icon='ERROR')
+            elif config.show_mesh_tools_section:
+                mesh_tools_col = mesh_tools_box.column()
+                mesh_tools_col.label(text="No collections available", icon='ERROR')
+                mesh_tools_col.label(text="Create Footage, Reflective, or Holdout Geo collections", icon='INFO')
+
+
+        box = layout.box()
+        row = box.row()
+        row.prop(config, "show_reflections_section",
+                icon='TRIA_DOWN' if config.show_reflections_section else 'TRIA_RIGHT',
+                icon_only=True, emboss=False)
+        row.label(text="Reflections", icon='SHADING_RENDERED')
+
+        if config.show_reflections_section:
+            col = box.column()
+            col.use_property_split = True
+
+            # Reflective Geo Collection - Always show this first
+            row3 = col.row()
+            row3.prop(config, "reflectors_collection", text="Reflective Geo")
+            row3.operator("scene.compify_add_reflectors_collection", text="", icon='ADD')
+
+            # Reflected Geo Collection
+            row4 = col.row()
+            row4.prop(config, "reflectees_collection", text="Reflected Geo")
+            row4.operator("scene.compify_add_reflectees_collection", text="", icon='ADD')
+
+            # Holdout Geo Collection
+            row5 = col.row()
+            row5.prop(config, "holdout_collection", text="Holdout Geo")
+            row5.operator("scene.compify_add_holdout_collection", text="", icon='ADD')
+
+            # Only show reflector settings if Reflective Geo collection exists
+            if config.reflectors_collection:
+                col.separator()
+                reflector_select_box = col.box()
+                reflector_select_box.label(text="Individual Reflector Settings", icon='SETTINGS')
+
+                # Object selector dropdown
+                selector_row = reflector_select_box.row()
+                selector_row.prop(config, "selected_reflector_object_enum", text="Object")
+
+                # Show settings for selected reflector object OR add new reflector button
+                if config.selected_reflector_object_enum != 'NONE':
+                    selected_obj_name = config.selected_reflector_object_enum
+                    if selected_obj_name in bpy.data.objects:
+                        selected_obj = bpy.data.objects[selected_obj_name]  # GET OBJECT FROM DROPDOWN, NOT ACTIVE OBJECT
+
+                        # Ensure the object has reflection properties
+                        if hasattr(selected_obj, 'compify_reflection'):
+                            settings_box = reflector_select_box.box()
+
+                            # Collapsible header for settings
+                            header_row = settings_box.row()
+                            header_row.prop(selected_obj.compify_reflection, "show_object_settings",
+                                           icon='TRIA_DOWN' if selected_obj.compify_reflection.show_object_settings else 'TRIA_RIGHT',
+                                           icon_only=True, emboss=False)
+                            header_row.label(text=f"Settings for: {selected_obj.name}", icon='OBJECT_DATA')
+
+                            # Only show settings if expanded
+                            if selected_obj.compify_reflection.show_object_settings:
+                                # Check if object has reflector material
+                                has_reflector_mat = False
+                                reflector_mat = None
+                                if selected_obj.data.materials:
+                                    for mat in selected_obj.data.materials:
+                                        if mat and "_Reflector_" in mat.name:
+                                            has_reflector_mat = True
+                                            reflector_mat = mat
+                                            break
+
+                                if not has_reflector_mat:
+                                    # No reflector material - show button to create one
+                                    warning_box = settings_box.box()
+                                    warning_box.alert = True
+                                    warning_box.label(text="⚠️ Object needs reflector material", icon='ERROR')
+
+                                    make_reflective_row = settings_box.row()
+                                    make_reflective_row.scale_y = 1.3
+                                    make_reflective_op = make_reflective_row.operator("scene.compify_make_reflective_specific",
+                                                                                    text="Make This Object Reflective",
+                                                                                    icon='SHADING_RENDERED')
+                                    make_reflective_op.object_name = selected_obj.name
+                                else:
+                                    # HAS reflector material - show comprehensive settings
+                                    settings_box.label(text="✅ Object is Reflective", icon='CHECKMARK')
+                                    settings_box.separator()
+
+                                    # Main reflection properties
+                                    settings_box.prop(selected_obj.compify_reflection, "reflection_strength", text="Strength", slider=True)
+
+                                    # Roughness source selector
+                                    settings_box.prop(selected_obj.compify_reflection, "roughness_source", text="Roughness")
+
+                                    # Show appropriate roughness control based on source
+                                    if selected_obj.compify_reflection.roughness_source == 'VALUE':
+                                        settings_box.prop(selected_obj.compify_reflection, "reflection_roughness", text="Roughness Value", slider=True)
+
+                                    elif selected_obj.compify_reflection.roughness_source == 'TEXTURE':
+                                        settings_box.template_ID(selected_obj.compify_reflection, "roughness_texture", open="image.open")
+
+                                        # Add ColorRamp section for texture roughness
+                                        if selected_obj.compify_reflection.roughness_texture:
+                                            remap_box = settings_box.box()
+                                            remap_row = remap_box.row()
+                                            remap_row.prop(selected_obj.compify_reflection, "show_texture_roughness_remap",
+                                                          icon='TRIA_DOWN' if selected_obj.compify_reflection.show_texture_roughness_remap else 'TRIA_RIGHT',
+                                                          icon_only=True, emboss=False)
+                                            remap_row.label(text="Texture Roughness Remap", icon='FCURVE')
+
+                                            if selected_obj.compify_reflection.show_texture_roughness_remap:
+                                                # Find the ColorRamp node if it exists
+                                                ramp_node = None
+                                                if reflector_mat and reflector_mat.node_tree:
+                                                    for node in reflector_mat.node_tree.nodes:
+                                                        if node.name == "Compify_Texture_Roughness_Remap" and node.type == 'VALTORGB':
+                                                            ramp_node = node
+                                                            break
+
+                                                if ramp_node:
+                                                    # Show the actual ColorRamp widget
+                                                    remap_box.template_color_ramp(ramp_node, "color_ramp", expand=True)
+                                                else:
+                                                    remap_box.label(text="Apply changes to create remap", icon='INFO')
+
+                                                # Quick presets
+                                                remap_box.separator()
+                                                preset_row = remap_box.row(align=True)
+                                                preset_row.label(text="Presets:")
+                                                preset_op1 = preset_row.operator("scene.compify_texture_roughness_remap_preset", text="Linear")
+                                                preset_op1.preset = 'LINEAR'
+                                                preset_op1.object_name = selected_obj.name
+                                                preset_op2 = preset_row.operator("scene.compify_texture_roughness_remap_preset", text="Invert")
+                                                preset_op2.preset = 'INVERT'
+                                                preset_op2.object_name = selected_obj.name
+                                                preset_op3 = preset_row.operator("scene.compify_texture_roughness_remap_preset", text="Contrast")
+                                                preset_op3.preset = 'CONTRAST'
+                                                preset_op3.object_name = selected_obj.name
+
+                                    elif selected_obj.compify_reflection.roughness_source == 'COMPIFY':
+                                        # Using Compify footage - show collapsible ColorRamp section
+                                        remap_box = settings_box.box()
+                                        remap_row = remap_box.row()
+                                        remap_row.prop(selected_obj.compify_reflection, "show_roughness_remap",
+                                                      icon='TRIA_DOWN' if selected_obj.compify_reflection.show_roughness_remap else 'TRIA_RIGHT',
+                                                      icon_only=True, emboss=False)
+                                        remap_row.label(text="Roughness Remap", icon='FCURVE')
+
+                                        if selected_obj.compify_reflection.show_roughness_remap:
+                                            # Find the ColorRamp node if it exists
+                                            ramp_node = None
+                                            if reflector_mat and reflector_mat.node_tree:
+                                                for node in reflector_mat.node_tree.nodes:
+                                                    if node.name == "Compify_Roughness_Remap" and node.type == 'VALTORGB':
+                                                        ramp_node = node
+                                                        break
+
+                                            if ramp_node:
+                                                # Show the actual ColorRamp widget
+                                                remap_box.template_color_ramp(ramp_node, "color_ramp", expand=True)
+                                            else:
+                                                remap_box.label(text="Apply changes to create remap", icon='INFO')
+
+                                            # Quick presets
+                                            remap_box.separator()
+                                            preset_row = remap_box.row(align=True)
+                                            preset_row.label(text="Presets:")
+                                            preset_op1 = preset_row.operator("scene.compify_roughness_remap_preset", text="Linear")
+                                            preset_op1.preset = 'LINEAR'
+                                            preset_op1.object_name = selected_obj.name
+                                            preset_op2 = preset_row.operator("scene.compify_roughness_remap_preset", text="Invert")
+                                            preset_op2.preset = 'INVERT'
+                                            preset_op2.object_name = selected_obj.name
+                                            preset_op3 = preset_row.operator("scene.compify_roughness_remap_preset", text="Contrast")
+                                            preset_op3.preset = 'CONTRAST'
+                                            preset_op3.object_name = selected_obj.name
+
+                                    settings_box.separator()
+                                    edge_control_box = settings_box.box()
+
+                                    # Collapsible header for edge controls
+                                    edge_header_row = edge_control_box.row()
+                                    edge_header_row.prop(selected_obj.compify_reflection, "show_edge_controls",
+                                                        icon='TRIA_DOWN' if selected_obj.compify_reflection.show_edge_controls else 'TRIA_RIGHT',
+                                                        icon_only=True, emboss=False)
+                                    edge_header_row.label(text="Edge Controls", icon='MOD_SMOOTH')
+
+                                    # Only show controls if expanded
+                                    if selected_obj.compify_reflection.show_edge_controls:
+                                        edge_control_col = edge_control_box.column()
+                                        edge_control_col.prop(selected_obj.compify_reflection, "feather", text="Feather", slider=True)
+                                        edge_control_col.prop(selected_obj.compify_reflection, "dilate", text="Dilate", slider=True)
+
+                                    # Apply changes button
+                                    settings_box.separator()
+                                    apply_row = settings_box.row()
+                                    apply_row.scale_y = 1.2
+                                    apply_op = apply_row.operator("scene.compify_force_update_reflector_specific",
+                                                                text="Apply Changes",
+                                                                icon='FILE_REFRESH')
+                                    apply_op.object_name = selected_obj.name
+
+                                    # Remove reflector material button
+                                    settings_box.separator()
+                                    remove_row = settings_box.row()
+                                    remove_op = remove_row.operator("scene.compify_remove_reflector_material",
+                                                                  text="Remove Reflector Material",
+                                                                  icon='X')
+                                    remove_op.object_name = selected_obj.name
+                        else:
+                            error_box = reflector_select_box.box()
+                            error_box.alert = True
+                            error_box.label(text="Selected object missing reflection properties", icon='ERROR')
+                else:
+                    # No object selected - show add current object button or help text
+                    if context.active_object and context.active_object.type == 'MESH':
+                        # Show button to make the active object reflective
+                        add_box = reflector_select_box.box()
+                        add_box.label(text=f"Active Object: {context.active_object.name}", icon='OBJECT_DATA')
+
+                        # Check if already in reflectors collection
+                        is_already_reflector = False
+                        if config.reflectors_collection:
+                            is_already_reflector = context.active_object in config.reflectors_collection.objects[:]
+
+                        if is_already_reflector:
+                            add_box.label(text="✅ Already in Reflective Geo collection", icon='CHECKMARK')
+                            help_row = add_box.row()
+                            help_row.label(text="Use dropdown above to edit settings", icon='INFO')
+                        else:
+                            make_reflector_row = add_box.row()
+                            make_reflector_row.scale_y = 1.3
+                            make_reflector_op = make_reflector_row.operator("scene.compify_make_reflective_and_select",
+                                                                          text="Make Active Object Reflective",
+                                                                          icon='SHADING_RENDERED')
+                            make_reflector_op.object_name = context.active_object.name
+                    else:
+                        # No object selected or not a mesh
+                        help_box = reflector_select_box.box()
+                        if context.active_object:
+                            help_box.label(text=f"Active object '{context.active_object.name}' is not a mesh", icon='INFO')
+                        else:
+                            help_box.label(text="Select a mesh object to make it reflective", icon='INFO')
+
+            # Quick Actions section - only show if we have an active object
+            if context.active_object:
+                obj = context.active_object
+
+                # Determine what actions are available based on collections
+                show_quick_actions = False
+                can_make_visible = config.reflectees_collection is not None
+                can_make_holdout = config.holdout_collection is not None and obj.type == 'MESH'
+
+                # Check if object is already in one of the collections
+                is_in_reflectees = False
+                if config.reflectees_collection:
+                    is_in_reflectees = obj in config.reflectees_collection.objects[:]
+
+                is_holdout = hasattr(obj, 'compify_reflection') and obj.compify_reflection.reflection_holdout
+
+                # Only show quick actions if there's something to show
+                if can_make_visible or can_make_holdout or is_in_reflectees or is_holdout:
+                    show_quick_actions = True
+
+                if show_quick_actions:
+                    col.separator()
+                    quick_actions_box = col.box()
+                    quick_actions_box.label(text=f"Quick Actions: {obj.name}", icon='OBJECT_DATA')
+
+                    # Check if object is holdout
+                    if is_holdout:
+                        quick_actions_box.label(text="✅ Object is a Reflection Holdout", icon='HOLDOUT_ON')
+                        quick_actions_box.label(text="(Blocks reflections but invisible)", icon='INFO')
+
+                        # Option to remove holdout
+                        row = quick_actions_box.row()
+                        row.operator("scene.compify_remove_holdout",
+                                    text="Remove Holdout",
+                                    icon='X')
+                    elif is_in_reflectees:
+                        quick_actions_box.label(text="✅ Object is in Reflected Geo collection", icon='CHECKMARK')
+                    else:
+                        # Show available actions based on what collections exist
+                        if can_make_visible or can_make_holdout:
+                            col_options = quick_actions_box.column(align=True)
+
+                            if can_make_visible:
+                                col_options.operator("scene.compify_make_object_reflect",
+                                                    text="Make Object Visible in Reflections",
+                                                    icon='HIDE_OFF')
+
+                            if can_make_holdout:
+                                col_options.operator("scene.compify_make_holdout",
+                                                    text="Make Reflection Holdout",
+                                                    icon='HOLDOUT_OFF')
+                        else:
+                            # No collections created yet
+                            info_box = quick_actions_box.box()
+                            info_box.label(text="Create collections above to enable quick actions", icon='INFO')
+
+            # If no reflectors collection exists, show helpful message
+            if not config.reflectors_collection:
+                col.separator()
+                help_box = col.box()
+                help_box.label(text="Create 'Reflective Geo' collection to enable reflection features", icon='INFO')
+
+        box = layout.box()
+        row = box.row()
+        row.prop(config, "show_baking_section",
+                icon='TRIA_DOWN' if config.show_baking_section else 'TRIA_RIGHT',
+                icon_only=True, emboss=False)
+        row.label(text="Baking Settings", icon='RENDER_STILL')
+
+        if config.show_baking_section:
+            col = box.column()
+            col.use_property_split = True
+            col.prop(config, "bake_uv_margin")
+            col.prop(config, "bake_image_res")
+
+        layout.separator(factor=1.0)
+
+        # Main actions with preferences button
+        main_row = layout.row()
+
+        # Main action buttons column
+        col = main_row.column(align=True)
+        col.scale_y = 1.3
+        col.operator("material.compify_prep_scene", icon='SCENE_DATA')
+        col.operator("material.compify_bake", icon='RENDER_STILL')
+        col.operator("render.compify_render", icon='RENDER_ANIMATION')
+
+        # Preferences button (gear icon only)
+        prefs_col = main_row.column()
+        prefs_col.scale_x = 1.3
+        prefs_col.scale_y = 1.3
+        prefs_col.operator("preferences.addon_show", text="", icon='PREFERENCES').module = __package__
+
+
 def register():
-    # Register property groups first
+    # Register property groups first (these need to exist before being used)
     bpy.utils.register_class(CompifyReflectionProperties)
     bpy.utils.register_class(CompifyFootageConfig)
 
-    # Register ALL operators
+    # Register ALL operators in a logical order
+    # Collection management operators
     bpy.utils.register_class(CompifyAddFootageGeoCollection)
     bpy.utils.register_class(CompifyAddFootageLightsCollection)
     bpy.utils.register_class(CompifyAddReflectorsCollection)
     bpy.utils.register_class(CompifyAddReflecteesCollection)
     bpy.utils.register_class(CompifyAddHoldoutCollection)
-    bpy.utils.register_class(CompifyMakeReflective)
-    bpy.utils.register_class(CompifyMakeObjectReflect)
-    bpy.utils.register_class(CompifyMakeHoldout)
-    bpy.utils.register_class(CompifyRemoveHoldout)
-    bpy.utils.register_class(CompifyForceUpdateReflector)
-    bpy.utils.register_class(CompifyUpdateReflections)
+
+    # Mesh tools operators (NEW)
+    bpy.utils.register_class(CompifyRecalculateNormals)
+
+    # Material and scene setup operators
     bpy.utils.register_class(CompifyResetMaterial)
     bpy.utils.register_class(CompifyPrepScene)
     bpy.utils.register_class(CompifyBake)
     bpy.utils.register_class(CompifyRender)
     bpy.utils.register_class(CompifyCameraProjectGroupNew)
+
+    # Reflection-related operators
+    bpy.utils.register_class(CompifyMakeReflective)
+    bpy.utils.register_class(CompifyMakeReflectiveSpecific)
+    bpy.utils.register_class(CompifyMakeReflectiveAndSelect)
+    bpy.utils.register_class(CompifyMakeObjectReflect)
+    bpy.utils.register_class(CompifyMakeHoldout)
+    bpy.utils.register_class(CompifyRemoveHoldout)
+    bpy.utils.register_class(CompifyForceUpdateReflector)
+    bpy.utils.register_class(CompifyForceUpdateReflectorSpecific)
+    bpy.utils.register_class(CompifyUpdateReflections)
+    bpy.utils.register_class(CompifyRemoveReflectorMaterial)
     bpy.utils.register_class(CompifyRoughnessRemapPreset)
     bpy.utils.register_class(CompifyTextureRoughnessRemapPreset)
-    bpy.utils.register_class(CompifyMakeReflectiveSpecific)
-    bpy.utils.register_class(CompifyForceUpdateReflectorSpecific)
-    bpy.utils.register_class(CompifyRemoveReflectorMaterial)
-    bpy.utils.register_class(CompifyMakeReflectiveAndSelect)
 
-    # Register panels (WITHOUT CompifyReflectionPanel)
+    # Feather/Dilate reset operator (if you have it)
+    # bpy.utils.register_class(CompifyResetFeatherDilate)  # Uncomment if this operator exists
+
+    # Register panels (AFTER operators so they can reference them)
     bpy.utils.register_class(CompifyPanel)
     bpy.utils.register_class(CompifyCameraPanel)
 
-    # Custom properties
+    # Register custom properties
     bpy.types.Scene.compify_config = bpy.props.PointerProperty(type=CompifyFootageConfig)
     bpy.types.Object.compify_reflection = bpy.props.PointerProperty(type=CompifyReflectionProperties)
 
-    # Other modules
+    # Register other modules
     camera_align_register()
     register_preferences()
 
+    print("Compify addon registered successfully")
+
 
 def unregister():
-    # Remove custom properties first
+    # Remove custom properties first (before the types they reference are unregistered)
     if hasattr(bpy.types.Scene, 'compify_config'):
         del bpy.types.Scene.compify_config
     if hasattr(bpy.types.Object, 'compify_reflection'):
         del bpy.types.Object.compify_reflection
 
-    # Other modules
+    # Unregister other modules
+    unregister_preferences()
     camera_align_unregister()
 
-    # Unregister panels
-    bpy.utils.unregister_class(CompifyPanel)
+    # Unregister panels first (they reference operators)
     bpy.utils.unregister_class(CompifyCameraPanel)
+    bpy.utils.unregister_class(CompifyPanel)
 
-    # Unregister ALL operators (reverse order)
+    # Unregister operators in reverse order
+    # Reflection-related operators
     bpy.utils.unregister_class(CompifyTextureRoughnessRemapPreset)
     bpy.utils.unregister_class(CompifyRoughnessRemapPreset)
+    bpy.utils.unregister_class(CompifyRemoveReflectorMaterial)
+    bpy.utils.unregister_class(CompifyUpdateReflections)
+    bpy.utils.unregister_class(CompifyForceUpdateReflectorSpecific)
+    bpy.utils.unregister_class(CompifyForceUpdateReflector)
+    bpy.utils.unregister_class(CompifyRemoveHoldout)
+    bpy.utils.unregister_class(CompifyMakeHoldout)
+    bpy.utils.unregister_class(CompifyMakeObjectReflect)
+    bpy.utils.unregister_class(CompifyMakeReflectiveAndSelect)
+    bpy.utils.unregister_class(CompifyMakeReflectiveSpecific)
+    bpy.utils.unregister_class(CompifyMakeReflective)
+
+    # Material and scene setup operators
     bpy.utils.unregister_class(CompifyCameraProjectGroupNew)
     bpy.utils.unregister_class(CompifyRender)
     bpy.utils.unregister_class(CompifyBake)
     bpy.utils.unregister_class(CompifyPrepScene)
     bpy.utils.unregister_class(CompifyResetMaterial)
-    bpy.utils.unregister_class(CompifyUpdateReflections)
-    bpy.utils.unregister_class(CompifyForceUpdateReflector)
-    bpy.utils.unregister_class(CompifyRemoveHoldout)
-    bpy.utils.unregister_class(CompifyMakeHoldout)
-    bpy.utils.unregister_class(CompifyMakeObjectReflect)
-    bpy.utils.unregister_class(CompifyMakeReflective)
+
+    # Mesh tools operators (NEW)
+    bpy.utils.unregister_class(CompifyRecalculateNormals)
+
+    # Collection management operators
     bpy.utils.unregister_class(CompifyAddHoldoutCollection)
     bpy.utils.unregister_class(CompifyAddReflecteesCollection)
     bpy.utils.unregister_class(CompifyAddReflectorsCollection)
     bpy.utils.unregister_class(CompifyAddFootageLightsCollection)
     bpy.utils.unregister_class(CompifyAddFootageGeoCollection)
-    bpy.utils.unregister_class(CompifyRemoveReflectorMaterial)
-    bpy.utils.unregister_class(CompifyForceUpdateReflectorSpecific)
-    bpy.utils.unregister_class(CompifyMakeReflectiveSpecific)
-    bpy.utils.unregister_class(CompifyMakeReflectiveAndSelect)
+
+    # Feather/Dilate reset operator (if you have it)
+    # bpy.utils.unregister_class(CompifyResetFeatherDilate)  # Uncomment if this operator exists
 
     # Unregister property groups last
-    bpy.utils.unregister_class(CompifyReflectionProperties)
     bpy.utils.unregister_class(CompifyFootageConfig)
+    bpy.utils.unregister_class(CompifyReflectionProperties)
 
-    unregister_preferences()
+    print("Compify addon unregistered successfully")
 
 
+# Main entry point
 if __name__ == "__main__":
     register()
 
