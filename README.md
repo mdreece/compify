@@ -119,10 +119,25 @@ Access the Compify menu in the **Scene Properties** (or popup panel/UI location)
 
 <img width="422" height="149" alt="Screenshot_20250928_143001" src="https://github.com/user-attachments/assets/8fe489b4-e079-4e0d-9359-0ee562f1625e" />
 
+
+## Reflective Geometry
+
 - Use the '+' next to **Reflective Geo** to create the collection (will be in Footage Geo)
-  - Add objects/geo that is going to be a reflective surface
-  - Select the object/geo for reflection strength options in the panel
+
+<img width="411" height="137" alt="Screenshot_20250928_144358" src="https://github.com/user-attachments/assets/0786d727-685b-4d61-af52-9b752b1b18e6" />
+
+- Select the geometry that will be reflective and click 'Make Active Object Reflective' (or select from Object dropdown)
+
+<img width="416" height="369" alt="Screenshot_20250928_144723" src="https://github.com/user-attachments/assets/7e40d58f-c720-4a94-a515-93954319caf9" />
+
+- Roughness options: Value, Texture, Compify Footage
+- Adjust the Strength/values as needed
+- Texture and Compify have color ramps
+
+## Reflected Geometry
+
 - Use the '+' next to **Reflected Geo** to create the collection
+
   - Add objects/geo that will be reflected on the above surfaces
 - Use the '+' next to **Holdout Geo** to create the collection
   - Add objects/geo using the button for blocking reflections
