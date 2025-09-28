@@ -98,6 +98,9 @@ Access the Compify menu in the **Scene Properties** (or popup panel/UI location)
   - Add objects/geometry that the footage will be projected onto.
 - Use the `+` next to **Footage Lights** to create the collection.
   - Add recreated lights here (HDRI/World is handled separately).
+
+<img width="414" height="153" alt="Screenshot_20250928_145650" src="https://github.com/user-attachments/assets/d1d8f01e-6aec-46c6-b9a0-d810287a8e3c" />
+
 - Mesh Tools: Recalculate inside/outside normals.
 - Material reset: Clear Compify material from selected object.
 
