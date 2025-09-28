@@ -28,7 +28,7 @@
 #
 bl_info = {
     "name": "Compify",
-    "version": (0, 2, 0),
+    "version": (0, 2, 1),
     "author": "Nathan Vegdahl, Ian Hubert, mr. robot",
     "blender": (4, 0, 0),
     "description": "Do compositing in 3D space with selective reflections.",
@@ -383,7 +383,7 @@ def get_footage_geo_objects_enum(self, context):
     if config.geo_collection:
         for obj in config.geo_collection.objects:
             if obj.type == 'MESH' and obj.name not in all_objects:
-                all_objects[obj.name] = ('OUTLINER_COLLECTION', "Footage Geo")
+                all_objects[obj.name] = ('OUTLINER_OB_MESH', "Footage Geo")
 
     # Add objects from Reflective Geo collection
     if config.reflectors_collection:
@@ -2075,7 +2075,7 @@ class CompifyRender(bpy.types.Operator):
 
         # Show resolution
         res_row = settings_col.row()
-        res_row.label(text="Resolution:", icon='FULLSCREEN')
+        res_row.label(text="Resolution:", icon='FULLSCREEN_ENTER')
         res_row.label(text=f"{context.scene.render.resolution_x} x {context.scene.render.resolution_y}")
 
         # Show frame range
@@ -2090,7 +2090,7 @@ class CompifyRender(bpy.types.Operator):
             warning_box = col.box()
             warning_box.alert = True
             warning_col = warning_box.column()
-            warning_col.label(text="⚠️ No output path set!", icon='ERROR')
+            warning_col.label(text="âš ï¸ No output path set!", icon='ERROR')
             warning_col.label(text="Your renders won't be saved!")
 
         # Confirmation question
@@ -2944,7 +2944,7 @@ class CompifyPanel(bpy.types.Panel):
 
                         if config.geo_collection and selected_obj in config.geo_collection.objects[:]:
                             collection_name = "Footage Geo"
-                            collection_icon = 'OUTLINER_COLLECTION'
+                            collection_icon = 'OUTLINER_OB_MESH'
                         elif config.reflectors_collection and selected_obj in config.reflectors_collection.objects[:]:
                             collection_name = "Reflective Geo"
                             collection_icon = 'SHADING_RENDERED'
@@ -3056,7 +3056,7 @@ class CompifyPanel(bpy.types.Panel):
                                     # No reflector material - show button to create one
                                     warning_box = settings_box.box()
                                     warning_box.alert = True
-                                    warning_box.label(text="⚠️ Object needs reflector material", icon='ERROR')
+                                    warning_box.label(text="âš ï¸ Object needs reflector material", icon='ERROR')
 
                                     make_reflective_row = settings_box.row()
                                     make_reflective_row.scale_y = 1.3
@@ -3066,7 +3066,7 @@ class CompifyPanel(bpy.types.Panel):
                                     make_reflective_op.object_name = selected_obj.name
                                 else:
                                     # HAS reflector material - show comprehensive settings
-                                    settings_box.label(text="✅ Object is Reflective", icon='CHECKMARK')
+                                    settings_box.label(text="âœ… Object is Reflective", icon='CHECKMARK')
                                     settings_box.separator()
 
                                     # Main reflection properties
@@ -3207,7 +3207,7 @@ class CompifyPanel(bpy.types.Panel):
                             is_already_reflector = context.active_object in config.reflectors_collection.objects[:]
 
                         if is_already_reflector:
-                            add_box.label(text="✅ Already in Reflective Geo collection", icon='CHECKMARK')
+                            add_box.label(text="âœ… Already in Reflective Geo collection", icon='CHECKMARK')
                             help_row = add_box.row()
                             help_row.label(text="Use dropdown above to edit settings", icon='INFO')
                         else:
@@ -3252,7 +3252,7 @@ class CompifyPanel(bpy.types.Panel):
 
                     # Check if object is holdout
                     if is_holdout:
-                        quick_actions_box.label(text="✅ Object is a Reflection Holdout", icon='HOLDOUT_ON')
+                        quick_actions_box.label(text="âœ… Object is a Reflection Holdout", icon='HOLDOUT_ON')
                         quick_actions_box.label(text="(Blocks reflections but invisible)", icon='INFO')
 
                         # Option to remove holdout
@@ -3261,7 +3261,7 @@ class CompifyPanel(bpy.types.Panel):
                                     text="Remove Holdout",
                                     icon='X')
                     elif is_in_reflectees:
-                        quick_actions_box.label(text="✅ Object is in Reflected Geo collection", icon='CHECKMARK')
+                        quick_actions_box.label(text="âœ… Object is in Reflected Geo collection", icon='CHECKMARK')
                     else:
                         # Show available actions based on what collections exist
                         if can_make_visible or can_make_holdout:
@@ -3302,17 +3302,14 @@ class CompifyPanel(bpy.types.Panel):
 
         layout.separator(factor=1.0)
 
-        # Main actions with preferences button
         main_row = layout.row()
 
-        # Main action buttons column
         col = main_row.column(align=True)
         col.scale_y = 1.3
         col.operator("material.compify_prep_scene", icon='SCENE_DATA')
         col.operator("material.compify_bake", icon='RENDER_STILL')
         col.operator("render.compify_render", icon='RENDER_ANIMATION')
 
-        # Preferences button (gear icon only)
         prefs_col = main_row.column()
         prefs_col.scale_x = 1.3
         prefs_col.scale_y = 1.3
@@ -3320,29 +3317,19 @@ class CompifyPanel(bpy.types.Panel):
 
 
 def register():
-    # Register property groups first (these need to exist before being used)
     bpy.utils.register_class(CompifyReflectionProperties)
     bpy.utils.register_class(CompifyFootageConfig)
-
-    # Register ALL operators in a logical order
-    # Collection management operators
     bpy.utils.register_class(CompifyAddFootageGeoCollection)
     bpy.utils.register_class(CompifyAddFootageLightsCollection)
     bpy.utils.register_class(CompifyAddReflectorsCollection)
     bpy.utils.register_class(CompifyAddReflecteesCollection)
     bpy.utils.register_class(CompifyAddHoldoutCollection)
-
-    # Mesh tools operators (NEW)
     bpy.utils.register_class(CompifyRecalculateNormals)
-
-    # Material and scene setup operators
     bpy.utils.register_class(CompifyResetMaterial)
     bpy.utils.register_class(CompifyPrepScene)
     bpy.utils.register_class(CompifyBake)
     bpy.utils.register_class(CompifyRender)
     bpy.utils.register_class(CompifyCameraProjectGroupNew)
-
-    # Reflection-related operators
     bpy.utils.register_class(CompifyMakeReflective)
     bpy.utils.register_class(CompifyMakeReflectiveSpecific)
     bpy.utils.register_class(CompifyMakeReflectiveAndSelect)
@@ -3355,19 +3342,10 @@ def register():
     bpy.utils.register_class(CompifyRemoveReflectorMaterial)
     bpy.utils.register_class(CompifyRoughnessRemapPreset)
     bpy.utils.register_class(CompifyTextureRoughnessRemapPreset)
-
-    # Feather/Dilate reset operator (if you have it)
-    # bpy.utils.register_class(CompifyResetFeatherDilate)  # Uncomment if this operator exists
-
-    # Register panels (AFTER operators so they can reference them)
     bpy.utils.register_class(CompifyPanel)
     bpy.utils.register_class(CompifyCameraPanel)
-
-    # Register custom properties
     bpy.types.Scene.compify_config = bpy.props.PointerProperty(type=CompifyFootageConfig)
     bpy.types.Object.compify_reflection = bpy.props.PointerProperty(type=CompifyReflectionProperties)
-
-    # Register other modules
     camera_align_register()
     register_preferences()
 
@@ -3375,22 +3353,14 @@ def register():
 
 
 def unregister():
-    # Remove custom properties first (before the types they reference are unregistered)
     if hasattr(bpy.types.Scene, 'compify_config'):
         del bpy.types.Scene.compify_config
     if hasattr(bpy.types.Object, 'compify_reflection'):
         del bpy.types.Object.compify_reflection
-
-    # Unregister other modules
     unregister_preferences()
     camera_align_unregister()
-
-    # Unregister panels first (they reference operators)
     bpy.utils.unregister_class(CompifyCameraPanel)
     bpy.utils.unregister_class(CompifyPanel)
-
-    # Unregister operators in reverse order
-    # Reflection-related operators
     bpy.utils.unregister_class(CompifyTextureRoughnessRemapPreset)
     bpy.utils.unregister_class(CompifyRoughnessRemapPreset)
     bpy.utils.unregister_class(CompifyRemoveReflectorMaterial)
@@ -3403,28 +3373,17 @@ def unregister():
     bpy.utils.unregister_class(CompifyMakeReflectiveAndSelect)
     bpy.utils.unregister_class(CompifyMakeReflectiveSpecific)
     bpy.utils.unregister_class(CompifyMakeReflective)
-
-    # Material and scene setup operators
     bpy.utils.unregister_class(CompifyCameraProjectGroupNew)
     bpy.utils.unregister_class(CompifyRender)
     bpy.utils.unregister_class(CompifyBake)
     bpy.utils.unregister_class(CompifyPrepScene)
     bpy.utils.unregister_class(CompifyResetMaterial)
-
-    # Mesh tools operators (NEW)
     bpy.utils.unregister_class(CompifyRecalculateNormals)
-
-    # Collection management operators
     bpy.utils.unregister_class(CompifyAddHoldoutCollection)
     bpy.utils.unregister_class(CompifyAddReflecteesCollection)
     bpy.utils.unregister_class(CompifyAddReflectorsCollection)
     bpy.utils.unregister_class(CompifyAddFootageLightsCollection)
     bpy.utils.unregister_class(CompifyAddFootageGeoCollection)
-
-    # Feather/Dilate reset operator (if you have it)
-    # bpy.utils.unregister_class(CompifyResetFeatherDilate)  # Uncomment if this operator exists
-
-    # Unregister property groups last
     bpy.utils.unregister_class(CompifyFootageConfig)
     bpy.utils.unregister_class(CompifyReflectionProperties)
 
