@@ -3302,18 +3302,14 @@ class CompifyPanel(bpy.types.Panel):
 
         layout.separator(factor=1.0)
 
-        main_row = layout.row()
-
-        col = main_row.column(align=True)
-        col.scale_y = 1.3
-        col.operator("material.compify_prep_scene", icon='SCENE_DATA')
-        col.operator("material.compify_bake", icon='RENDER_STILL')
-        col.operator("render.compify_render", icon='RENDER_ANIMATION')
-
-        prefs_col = main_row.column()
-        prefs_col.scale_x = 1.3
-        prefs_col.scale_y = 1.3
-        prefs_col.operator("preferences.addon_show", text="", icon='PREFERENCES').module = __package__
+        main_row = layout.row(align=True)
+        main_row.scale_y = 1.3
+        
+        main_row.operator("material.compify_prep_scene", text="Prep", icon='SCENE_DATA')
+        main_row.operator("material.compify_bake", text="Bake", icon='RENDER_STILL')
+        main_row.operator("render.compify_render", text="Render", icon='RENDER_ANIMATION')
+        
+        main_row.operator("preferences.addon_show", text="", icon='PREFERENCES').module = __package__
 
 
 def register():
