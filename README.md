@@ -120,13 +120,13 @@ Access the Compify menu in the **Scene Properties** (or popup panel/UI location)
 <img width="422" height="149" alt="Screenshot_20250928_143001" src="https://github.com/user-attachments/assets/8fe489b4-e079-4e0d-9359-0ee562f1625e" />
 
 
-## Reflective Geometry
+### Reflective Geometry
 
 - Use the '+' next to **Reflective Geo** to create the collection (will be in Footage Geo)
 
 <img width="411" height="137" alt="Screenshot_20250928_144358" src="https://github.com/user-attachments/assets/0786d727-685b-4d61-af52-9b752b1b18e6" />
 
-- Select the geometry that will be reflective and click 'Make Active Object Reflective' (or select from Object dropdown)
+- Select the geometry that will be reflective and click 'Make Active Object Reflective' (or select from Object dropdown if already in reflective geo collection)
 
 <img width="416" height="369" alt="Screenshot_20250928_144723" src="https://github.com/user-attachments/assets/7e40d58f-c720-4a94-a515-93954319caf9" />
 
@@ -134,17 +134,25 @@ Access the Compify menu in the **Scene Properties** (or popup panel/UI location)
 - Adjust the Strength/values as needed
 - Texture and Compify have color ramps
 
-## Reflected Geometry
+### Reflected Geometry
 
 - Use the '+' next to **Reflected Geo** to create the collection
+- Once the collection is created, select your object that should be reflected and click 'Make Object Visible in Reflections' in Quick Actions.
 
-  - Add objects/geo that will be reflected on the above surfaces
+<img width="411" height="66" alt="Screenshot_20250928_145104" src="https://github.com/user-attachments/assets/fccafee0-038f-4f1d-8d26-f5f45a254186" />
+
+### Holdout Geometry
+
 - Use the '+' next to **Holdout Geo** to create the collection
-  - Add objects/geo using the button for blocking reflections
+- Once the collection is created, select your object that should be reflection holdouts and click 'Make Reflection Holdout' in Quick Actions.
+
+
+<img width="412" height="63" alt="Screenshot_20250928_145353" src="https://github.com/user-attachments/assets/88f04d3f-039b-4ded-be99-1b9918d8b39c" />
+
     
 - Click **Prep Scene** → then **Bake Footage Lighting**
 
-<img width="796" height="450" alt="Screenshot_20250920_170944" src="https://github.com/user-attachments/assets/239f4ff8-a373-4ccd-b430-027af41b1849" />
+<img width="843" height="476" alt="Screenshot_20250928_145539" src="https://github.com/user-attachments/assets/0fdf681c-a4d9-4e78-ab60-63aa0bd18e98" />
 
 
 ---
