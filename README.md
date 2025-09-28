@@ -1,4 +1,4 @@
-# Compify v0.2.0 – Blender Addon
+# Compify v0.2.1 – Blender Addon
 
 **A Blender addon for easier/better compositing in 3D space.**  
 
